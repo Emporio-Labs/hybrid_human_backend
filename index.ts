@@ -5,6 +5,7 @@ import appointmentRouter from "./src/routes/appointment.routes";
 import authRouter from "./src/routes/auth.routes";
 import bookingRouter from "./src/routes/booking.routes";
 import doctorRouter from "./src/routes/doctor.routes";
+import scheduleRouter from "./src/routes/schedule.routes";
 import slotRouter from "./src/routes/slot.routes";
 import trainerRouter from "./src/routes/trainer.routes";
 import connectDB from "./src/utils/db";
@@ -20,6 +21,7 @@ app.use("/trainers", trainerRouter);
 app.use("/slots", slotRouter);
 app.use("/bookings", bookingRouter);
 app.use("/appointments", appointmentRouter);
+app.use("/schedules", scheduleRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });

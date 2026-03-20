@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** March 20, 2026
+**Last Updated:** March 21, 2026
 
 ---
 
@@ -12,14 +12,15 @@
 2. [Endpoints Overview](#endpoints-overview)
 3. [Auth Routes](#auth-routes)
 4. [Admin Routes](#admin-routes)
-5. [Doctor Routes](#doctor-routes)
-6. [Trainer Routes](#trainer-routes)
-7. [Slot Routes](#slot-routes)
-8. [Booking Routes](#booking-routes)
-9. [Appointment Routes](#appointment-routes)
-10. [Schedule Routes](#schedule-routes)
-11. [Enums & Status Codes](#enums--status-codes)
-12. [Error Handling](#error-handling)
+5. [User Routes](#user-routes)
+6. [Doctor Routes](#doctor-routes)
+7. [Trainer Routes](#trainer-routes)
+8. [Slot Routes](#slot-routes)
+9. [Booking Routes](#booking-routes)
+10. [Appointment Routes](#appointment-routes)
+11. [Schedule Routes](#schedule-routes)
+12. [Enums & Status Codes](#enums--status-codes)
+13. [Error Handling](#error-handling)
 
 ---
 
@@ -58,6 +59,7 @@ The system supports 4 role types:
 |-------|---------|------|-----------|
 | `/auth` | User authentication | ❌ No | 2 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
+| `/users` | Member management | ✅ Admin only | 5 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
 | `/slots` | Time slot management | ✅ Admin only | 5 endpoints |
@@ -66,7 +68,7 @@ The system supports 4 role types:
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 43
+**Total Endpoints:** 48
 
 ---
 
@@ -109,7 +111,7 @@ POST /auth/signup
 
 ---
 
-#### 2. User Login
+#### 2. Unified Login (User/Admin)
 ```
 POST /auth/login
 ```
@@ -137,9 +139,21 @@ POST /auth/login
 }
 ```
 
+**Admin Login Response Example (200 OK):**
+```json
+{
+  "message": "Login successful",
+  "user": {
+    "id": "507f1f77bcf86cd799439099",
+    "email": "admin@hybridhuman.com",
+    "role": "admin"
+  }
+}
+```
+
 **Error Responses:**
-- `400` — Invalid credentials
-- `404` — User not found
+- `400` — Invalid login payload
+- `401` — Invalid email or password
 
 ---
 
@@ -270,6 +284,149 @@ DELETE /admins/:id
 ```json
 {
   "message": "Admin deleted successfully"
+}
+```
+
+---
+
+## User Routes
+
+### Base Path: `/users`
+
+**Global Requirements:**
+- ✅ Basic Authentication required
+- ✅ Admin role required for all endpoints
+
+#### 1. Create User
+```
+POST /users
+```
+
+**Request Body:**
+```json
+{
+  "username": "john_doe",
+  "email": "john@example.com",
+  "phone": "+1234567890",
+  "password": "securePassword123",
+  "age": "28",
+  "gender": "Male",
+  "healthGoals": ["Build muscle", "Improve stamina"]
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "message": "User created",
+  "user": {
+    "_id": "507f1f77bcf86cd799439011",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "age": "28",
+    "gender": "Male",
+    "healthGoals": ["Build muscle", "Improve stamina"],
+    "createdAt": "2026-03-21T10:00:00Z",
+    "updatedAt": "2026-03-21T10:00:00Z"
+  }
+}
+```
+
+---
+
+#### 2. Get All Users
+```
+GET /users
+```
+
+**Response (200 OK):**
+```json
+{
+  "users": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "username": "john_doe",
+      "email": "john@example.com",
+      "phone": "+1234567890",
+      "age": "28",
+      "gender": "Male",
+      "healthGoals": ["Build muscle", "Improve stamina"],
+      "createdAt": "2026-03-21T10:00:00Z",
+      "updatedAt": "2026-03-21T10:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+#### 3. Get User by ID
+```
+GET /users/:id
+```
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Response (200 OK):**
+```json
+{
+  "user": {
+    "_id": "507f1f77bcf86cd799439011",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "age": "28",
+    "gender": "Male",
+    "healthGoals": ["Build muscle", "Improve stamina"],
+    "createdAt": "2026-03-21T10:00:00Z",
+    "updatedAt": "2026-03-21T10:00:00Z"
+  }
+}
+```
+
+---
+
+#### 4. Update User
+```
+PATCH /users/:id
+```
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Request Body (all fields optional):**
+```json
+{
+  "username": "john_updated",
+  "phone": "+1987654321",
+  "healthGoals": ["Weight loss", "Sleep improvement"]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "User updated",
+  "user": { /* updated user object */ }
+}
+```
+
+---
+
+#### 5. Delete User
+```
+DELETE /users/:id
+```
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Response (200 OK):**
+```json
+{
+  "message": "User deleted"
 }
 ```
 
@@ -1132,4 +1289,4 @@ For questions or issues with the API:
 3. Verify Basic Auth headers are properly formatted
 4. Check that resource IDs are valid MongoDB ObjectIds
 
-**Last Updated:** March 20, 2026
+**Last Updated:** March 21, 2026

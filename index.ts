@@ -8,16 +8,60 @@ import doctorRouter from "./src/routes/doctor.routes";
 import scheduleRouter from "./src/routes/schedule.routes";
 import slotRouter from "./src/routes/slot.routes";
 import trainerRouter from "./src/routes/trainer.routes";
+import userRouter from "./src/routes/user.routes";
 import connectDB from "./src/utils/db";
 
 const app = express();
 config();
 
+const allowedOrigins = new Set([
+	process.env.CLIENT_URL ?? "http://localhost:3001",
+]);
+
+app.use((req, res, next) => {
+	const origin = req.headers.origin;
+
+	if (origin && allowedOrigins.has(origin)) {
+		res.setHeader("Access-Control-Allow-Origin", origin);
+		res.setHeader("Vary", "Origin");
+	}
+
+	res.setHeader(
+		"Access-Control-Allow-Methods",
+		"GET,POST,PUT,PATCH,DELETE,OPTIONS",
+	);
+	res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+	res.setHeader("Access-Control-Allow-Credentials", "true");
+
+	if (req.method === "OPTIONS") {
+		res.sendStatus(204);
+		return;
+	}
+
+	next();
+});
+
 app.use(express.json());
+app.use((req, res, next) => {
+	const start = Date.now();
+
+	console.log(`[REQ] ${req.method} ${req.originalUrl}`);
+
+	res.on("finish", () => {
+		const durationMs = Date.now() - start;
+		console.log(
+			`[RES] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`,
+		);
+	});
+
+	next();
+});
+
 app.use("/auth", authRouter);
 app.use("/admins", adminRouter);
 app.use("/doctors", doctorRouter);
 app.use("/trainers", trainerRouter);
+app.use("/users", userRouter);
 app.use("/slots", slotRouter);
 app.use("/bookings", bookingRouter);
 app.use("/appointments", appointmentRouter);

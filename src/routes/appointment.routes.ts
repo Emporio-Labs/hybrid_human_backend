@@ -1,0 +1,30 @@
+import { Router } from "express";
+import {
+	changeAppointmentStatus,
+	createAppointment,
+	deleteAppointmentById,
+	getAllAppointments,
+	getAppointmentById,
+	getMyAppointments,
+	updateAppointmentById,
+} from "../controllers/appointment.controller";
+import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { authorize } from "../middleware/rbac.middleware";
+
+const appointmentRouter = Router();
+
+appointmentRouter.use(authenticateBasicCredentials);
+
+appointmentRouter.post("/", authorize(["admin"]), createAppointment);
+appointmentRouter.get("/", authorize(["admin"]), getAllAppointments);
+appointmentRouter.get("/me", authorize(["doctor"]), getMyAppointments);
+appointmentRouter.get("/:id", authorize(["admin"]), getAppointmentById);
+appointmentRouter.patch("/:id", authorize(["admin"]), updateAppointmentById);
+appointmentRouter.delete("/:id", authorize(["admin"]), deleteAppointmentById);
+appointmentRouter.patch(
+	"/:id/status",
+	authorize(["admin", "doctor"]),
+	changeAppointmentStatus,
+);
+
+export default appointmentRouter;

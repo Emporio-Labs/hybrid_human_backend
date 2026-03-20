@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
 import Doctor from "../models/Doctor";
 import Trainer from "../models/Trainer";
+import User from "../models/User";
 
 const getCredentialsFromHeader = (
 	authorization: string | undefined,
@@ -52,10 +53,11 @@ export const authenticateBasicCredentials: RequestHandler = async (
 	const { email, password } = credentials;
 
 	try {
-		const [admin, doctor, trainer] = await Promise.all([
+		const [admin, doctor, trainer, user] = await Promise.all([
 			Admin.findOne({ email, passwordHash: password }).select("_id email"),
 			Doctor.findOne({ email, passwordHash: password }).select("_id email"),
 			Trainer.findOne({ email, passwordHash: password }).select("_id email"),
+			User.findOne({ email, passwordHash: password }).select("_id email"),
 		]);
 
 		if (admin) {
@@ -83,6 +85,16 @@ export const authenticateBasicCredentials: RequestHandler = async (
 				id: trainer._id.toString(),
 				email: trainer.email,
 				role: "trainer",
+			};
+			next();
+			return;
+		}
+
+		if (user) {
+			req.user = {
+				id: user._id.toString(),
+				email: user.email,
+				role: "user",
 			};
 			next();
 			return;

@@ -1,6 +1,9 @@
 import type { RequestHandler } from "express";
 import User from "../models/User";
-import { loginBodySchema, signupBodySchema } from "../validators/auth.validator";
+import {
+  loginBodySchema,
+  signupBodySchema,
+} from "../validators/auth.validator";
 
 export const signup: RequestHandler = async (req, res, next) => {
   const parsedBody = signupBodySchema.safeParse(req.body);
@@ -13,7 +16,8 @@ export const signup: RequestHandler = async (req, res, next) => {
     return;
   }
 
-  const { username, phone, email, age, gender, healthGoals, password } = parsedBody.data;
+  const { username, phone, email, age, gender, healthGoals, password } =
+    parsedBody.data;
 
   try {
     const existingUser = await User.findOne({ email }).select("_id");

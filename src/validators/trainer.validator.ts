@@ -2,7 +2,7 @@ import z from "zod";
 
 export const createTrainerBodySchema = z.object({
 	trainerName: z.string().min(1),
-	email: z.email(),
+	email: z.string().email(),
 	phone: z.string().min(1),
 	password: z.string().min(6),
 	description: z.string().default(""),

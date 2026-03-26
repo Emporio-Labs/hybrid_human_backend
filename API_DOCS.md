@@ -63,7 +63,7 @@ The system supports 4 role types:
 |-------|---------|------|-----------|
 | `/auth` | User authentication | ❌ No | 2 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
-| `/users` | Member management | ✅ Admin only | 5 endpoints |
+| `/users` | Member management | ✅ Admin + Doctor (read), Admin (write) | 5 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
 | `/slots` | Time slot management | ✅ Admin only | 5 endpoints |
@@ -195,7 +195,8 @@ POST /auth/login
 
 **Global Requirements:**
 - ✅ Basic Authentication required
-- ✅ Admin role required for all endpoints
+- ✅ Admin role required for create/update/delete
+- ✅ Admin or Doctor role allowed for read (list and get by id)
 
 #### 1. Create Admin
 ```
@@ -372,6 +373,8 @@ POST /users
 GET /users
 ```
 
+**Auth:** Admin or Doctor
+
 **Response (200 OK):**
 ```json
 {
@@ -400,6 +403,8 @@ GET /users/:id
 
 **URL Params:**
 - `id` (string, required) — User MongoDB ObjectId
+
+**Auth:** Admin or Doctor
 
 **Response (200 OK):**
 ```json

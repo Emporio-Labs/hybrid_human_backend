@@ -1,5 +1,7 @@
 import type { RequestHandler } from "express";
 import Admin from "../models/Admin";
+import Doctor from "../models/Doctor";
+import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
 	loginBodySchema,
@@ -71,11 +73,13 @@ export const login: RequestHandler = async (req, res, next) => {
 	const { email, password } = parsedBody.data;
 
 	try {
-		console.log("[AUTH][LOGIN] Looking up user/admin", { email });
+		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", { email });
 
-		const [user, admin] = await Promise.all([
+		const [user, admin, doctor, trainer] = await Promise.all([
 			User.findOne({ email }),
 			Admin.findOne({ email }),
+			Doctor.findOne({ email }),
+			Trainer.findOne({ email }),
 		]);
 
 		const matchedAccount =
@@ -91,7 +95,19 @@ export const login: RequestHandler = async (req, res, next) => {
 							email: admin.email,
 							role: "admin" as const,
 						}
-					: null;
+					: doctor && doctor.passwordHash === password
+						? {
+								id: doctor._id.toString(),
+								email: doctor.email,
+								role: "doctor" as const,
+							}
+						: trainer && trainer.passwordHash === password
+								? {
+										id: trainer._id.toString(),
+										email: trainer.email,
+										role: "trainer" as const,
+									}
+								: null;
 
 		if (!matchedAccount) {
 			console.log("[AUTH][LOGIN] Invalid credentials", {

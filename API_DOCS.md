@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** March 21, 2026
+**Last Updated:** March 26, 2026
 
 ---
 
@@ -119,7 +119,7 @@ POST /auth/signup
 
 ---
 
-#### 2. Unified Login (User/Admin)
+#### 2. Unified Login (User/Admin/Doctor/Trainer)
 ```
 POST /auth/login
 ```
@@ -155,6 +155,30 @@ POST /auth/login
     "id": "507f1f77bcf86cd799439099",
     "email": "admin@hybridhuman.com",
     "role": "admin"
+  }
+}
+```
+
+**Doctor Login Response Example (200 OK):**
+```json
+{
+  "message": "Login successful",
+  "user": {
+    "id": "507f1f77bcf86cd799439055",
+    "email": "dr.jane@hybridhuman.com",
+    "role": "doctor"
+  }
+}
+```
+
+**Trainer Login Response Example (200 OK):**
+```json
+{
+  "message": "Login successful",
+  "user": {
+    "id": "507f1f77bcf86cd799439077",
+    "email": "coach.mike@hybridhuman.com",
+    "role": "trainer"
   }
 }
 ```

@@ -5,7 +5,7 @@ const serviceSchema = new mongoose.Schema(
 		serviceName: { type: String, required: true },
 		serviceTime: { type: Number, required: true },
 		description: { type: String, required: true },
-		credits: { type: Number, required: true },
+		credits: { type: Number, required: true, min: 1 },
 		tags: { type: [String], default: [] },
 		slots: [
 			{

@@ -5,10 +5,14 @@ import appointmentRouter from "./src/routes/appointment.routes";
 import authRouter from "./src/routes/auth.routes";
 import bookingRouter from "./src/routes/booking.routes";
 import doctorRouter from "./src/routes/doctor.routes";
+import membershipRouter from "./src/routes/membership.routes";
 import scheduleRouter from "./src/routes/schedule.routes";
 import slotRouter from "./src/routes/slot.routes";
+import serviceRouter from "./src/routes/service.routes";
 import trainerRouter from "./src/routes/trainer.routes";
+import therapyRouter from "./src/routes/therapy.routes";
 import userRouter from "./src/routes/user.routes";
+import leadRouter from "./src/routes/lead.routes";
 import connectDB from "./src/utils/db";
 
 const app = express();
@@ -62,10 +66,14 @@ app.use("/admins", adminRouter);
 app.use("/doctors", doctorRouter);
 app.use("/trainers", trainerRouter);
 app.use("/users", userRouter);
+app.use("/memberships", membershipRouter);
 app.use("/slots", slotRouter);
+app.use("/services", serviceRouter);
+app.use("/therapies", therapyRouter);
 app.use("/bookings", bookingRouter);
 app.use("/appointments", appointmentRouter);
 app.use("/schedules", scheduleRouter);
+app.use("/leads", leadRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });

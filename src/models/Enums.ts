@@ -12,8 +12,23 @@ export enum BookingStatus {
   Unattended,
 }
 
+export enum MembershipStatus {
+  Active = "Active",
+  Paused = "Paused",
+  Cancelled = "Cancelled",
+  Expired = "Expired",
+}
+
 export enum TodoStatus {
   Todo,
   Doing,
   Done,
+}
+
+export enum LeadStatus {
+  New = "New",
+  Contacted = "Contacted",
+  Qualified = "Qualified",
+  Converted = "Converted",
+  Lost = "Lost",
 }

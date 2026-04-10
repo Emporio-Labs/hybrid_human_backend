@@ -196,7 +196,7 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 				...(endDateValue ? { endDate: endDateValue } : {}),
 				...rest,
 			},
-			{ new: true, runValidators: true },
+			{ returnDocument: "after", runValidators: true },
 		);
 
 		if (!updatedMembership) {

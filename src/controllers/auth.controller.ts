@@ -37,12 +37,14 @@ export const signup: RequestHandler = async (req, res, next) => {
 			age,
 			gender,
 			healthGoals,
+			onboarded: false,
 			passwordHash: password,
 		});
 
 		res.status(201).json({
 			message: "User signup successful",
 			userId: createdUser._id,
+			onboarded: createdUser.onboarded,
 		});
 	} catch (error) {
 		next(error);

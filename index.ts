@@ -13,14 +13,19 @@ import trainerRouter from "./src/routes/trainer.routes";
 import therapyRouter from "./src/routes/therapy.routes";
 import userRouter from "./src/routes/user.routes";
 import leadRouter from "./src/routes/lead.routes";
+import webhookRouter from "./src/routes/webhook.route";
 import connectDB from "./src/utils/db";
+import { registerGmailWatch } from "./src/utils/email.service";
 
 const app = express();
 config();
 
-const allowedOrigins = new Set([
-	process.env.CLIENT_URL ?? "http://localhost:3001",
-]);
+const allowedOrigins = new Set(
+	(process.env.CLIENT_URLS ?? process.env.CLIENT_URL ?? "http://localhost:3001,http://localhost:3002")
+		.split(",")
+		.map((origin) => origin.trim())
+		.filter(Boolean),
+);
 
 app.use((req, res, next) => {
 	const origin = req.headers.origin;
@@ -74,6 +79,7 @@ app.use("/bookings", bookingRouter);
 app.use("/appointments", appointmentRouter);
 app.use("/schedules", scheduleRouter);
 app.use("/leads", leadRouter);
+app.use("/webhook", webhookRouter);
 
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });
@@ -81,7 +87,23 @@ app.get("/health", (_req, res) => {
 
 const port = Number(process.env.PORT ?? 3000);
 
-await connectDB();
-app.listen(port, () => {
-	console.log(`Server is running on port ${port}`);
-});
+const start = async () => {
+	await connectDB();
+
+	const pubsubTopic = process.env.PUBSUB_TOPIC;
+	if (pubsubTopic) {
+		await registerGmailWatch(pubsubTopic);
+
+		setInterval(() => {
+			void registerGmailWatch(pubsubTopic);
+		}, 6 * 24 * 60 * 60 * 1000);
+	} else {
+		console.warn("PUBSUB_TOPIC is not set. Gmail watch registration is skipped.");
+	}
+
+	app.listen(port, () => {
+		console.log(`Server is running on port ${port}`);
+	});
+};
+
+await start();

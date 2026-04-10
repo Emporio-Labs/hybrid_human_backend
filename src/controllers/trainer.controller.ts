@@ -97,7 +97,7 @@ export const updateTrainerById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const updatedTrainer = await Trainer.findByIdAndUpdate(id, updatePayload, {
-			new: true,
+			returnDocument: "after",
 			runValidators: true,
 		});
 

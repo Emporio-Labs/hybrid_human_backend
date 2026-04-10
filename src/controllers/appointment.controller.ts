@@ -167,7 +167,7 @@ export const updateAppointmentById: RequestHandler = async (req, res, next) => {
 				...(doctorId ? { doctor: doctorId } : {}),
 				...(reportId ? { report: reportId } : {}),
 			},
-			{ new: true, runValidators: true },
+			{ returnDocument: "after", runValidators: true },
 		);
 
 		if (!updatedAppointment) {

@@ -87,7 +87,7 @@ export const updateSlotById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const updatedSlot = await Slot.findByIdAndUpdate(id, parsedBody.data, {
-			new: true,
+			returnDocument: "after",
 			runValidators: true,
 		});
 

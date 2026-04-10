@@ -29,6 +29,9 @@ export enum LeadStatus {
   New = "New",
   Contacted = "Contacted",
   Qualified = "Qualified",
+  Warm = "Warm",
+  Hot = "Hot",
+  Cold = "Cold",
   Converted = "Converted",
   Lost = "Lost",
 }

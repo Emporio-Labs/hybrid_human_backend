@@ -12,6 +12,7 @@ export const createLeadBodySchema = z.object({
   interestedIn: z.string().trim().min(1).optional(),
   notes: z.string().trim().optional(),
   tags: z.array(z.string().trim().min(1)).default([]),
+  followUpDate: z.string().trim().min(1).optional(),
   ownerId: z.string().trim().min(1).optional(),
   status: z.enum(leadStatusValues).optional(),
 });

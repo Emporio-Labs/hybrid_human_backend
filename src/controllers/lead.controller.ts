@@ -9,6 +9,12 @@ import {
   updateLeadBodySchema,
 } from "../validators/lead.validator";
 
+const parseDateOrNull = (value: string | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
   if (typeof idParam !== "string" || !mongoose.Types.ObjectId.isValid(idParam)) {
     return null;
@@ -30,6 +36,13 @@ export const createLead: RequestHandler = async (req, res, next) => {
 
   const { ownerId, ...leadData } = parsedBody.data;
 
+  const followUpDateValue = parseDateOrNull(parsedBody.data.followUpDate);
+
+  if (parsedBody.data.followUpDate && !followUpDateValue) {
+    res.status(400).json({ message: "Invalid followUpDate" });
+    return;
+  }
+
   if (ownerId && !mongoose.Types.ObjectId.isValid(ownerId)) {
     res.status(400).json({ message: "Invalid ownerId" });
     return;
@@ -38,6 +51,7 @@ export const createLead: RequestHandler = async (req, res, next) => {
   try {
     const lead = await Lead.create({
       ...leadData,
+      ...(followUpDateValue ? { followUpDate: followUpDateValue } : {}),
       ...(ownerId ? { owner: ownerId } : {}),
     });
 
@@ -98,6 +112,13 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
 
   const { ownerId, ...payload } = parsedBody.data;
 
+  const followUpDateValue = parseDateOrNull(parsedBody.data.followUpDate);
+
+  if (parsedBody.data.followUpDate && !followUpDateValue) {
+    res.status(400).json({ message: "Invalid followUpDate" });
+    return;
+  }
+
   if (ownerId && !mongoose.Types.ObjectId.isValid(ownerId)) {
     res.status(400).json({ message: "Invalid ownerId" });
     return;
@@ -108,9 +129,10 @@ export const updateLeadById: RequestHandler = async (req, res, next) => {
       id,
       {
         ...payload,
+        ...(followUpDateValue !== null ? { followUpDate: followUpDateValue } : {}),
         ...(ownerId ? { owner: ownerId } : {}),
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     );
 
     if (!updatedLead) {

@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** March 26, 2026
+**Last Updated:** March 27, 2026
 
 ---
 
@@ -63,7 +63,7 @@ The system supports 4 role types:
 |-------|---------|------|-----------|
 | `/auth` | User authentication | ❌ No | 2 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
-| `/users` | Member management | ✅ Admin + Doctor (read), Admin (write) | 5 endpoints |
+| `/users` | Member management | ✅ Admin + Doctor (read), Admin (write), User self-onboard | 6 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
 | `/slots` | Time slot management | ✅ Admin only | 5 endpoints |
@@ -76,7 +76,7 @@ The system supports 4 role types:
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 70
+**Total Endpoints:** 71
 
 ---
 
@@ -109,7 +109,8 @@ POST /auth/signup
 ```json
 {
   "message": "User registered successfully",
-  "userId": "507f1f77bcf86cd799439011"
+  "userId": "507f1f77bcf86cd799439011",
+  "onboarded": false
 }
 ```
 
@@ -328,7 +329,8 @@ DELETE /admins/:id
 
 **Global Requirements:**
 - ✅ Basic Authentication required
-- ✅ Admin role required for all endpoints
+- ✅ Admin role for create/update/delete (except onboarding)
+- ✅ Users can onboard themselves; admins can onboard any user
 
 #### 1. Create User
 ```
@@ -360,6 +362,7 @@ POST /users
     "age": "28",
     "gender": "Male",
     "healthGoals": ["Build muscle", "Improve stamina"],
+    "onboarded": false,
     "createdAt": "2026-03-21T10:00:00Z",
     "updatedAt": "2026-03-21T10:00:00Z"
   }
@@ -417,6 +420,7 @@ GET /users/:id
     "age": "28",
     "gender": "Male",
     "healthGoals": ["Build muscle", "Improve stamina"],
+    "onboarded": false,
     "createdAt": "2026-03-21T10:00:00Z",
     "updatedAt": "2026-03-21T10:00:00Z"
   }
@@ -438,7 +442,8 @@ PATCH /users/:id
 {
   "username": "john_updated",
   "phone": "+1987654321",
-  "healthGoals": ["Weight loss", "Sleep improvement"]
+  "healthGoals": ["Weight loss", "Sleep improvement"],
+  "onboarded": true
 }
 ```
 
@@ -452,7 +457,56 @@ PATCH /users/:id
 
 ---
 
-#### 5. Delete User
+#### 5. Onboard User (self or admin)
+```
+PATCH /users/:id/onboard
+```
+
+**Authorization:** Admin (any user) or User (self)
+
+**Purpose:** Mark the user as onboarded and optionally update profile fields in one call.
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Request Body (all fields optional; at least one required):**
+```json
+{
+  "username": "john_doe",
+  "phone": "+1234567890",
+  "age": "28",
+  "gender": "Male",
+  "healthGoals": ["Build muscle"],
+  "onboarded": true
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "User onboarded",
+  "user": {
+    "_id": "507f1f77bcf86cd799439011",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "age": "28",
+    "gender": "Male",
+    "healthGoals": ["Build muscle"],
+    "onboarded": true,
+    "createdAt": "2026-03-21T10:00:00Z",
+    "updatedAt": "2026-03-21T10:05:00Z"
+  }
+}
+```
+
+**Notes:**
+- Users can only onboard themselves; admins can onboard any user.
+- The endpoint forces `onboarded` to `true` even if omitted.
+
+---
+
+#### 6. Delete User
 ```
 DELETE /users/:id
 ```
@@ -979,7 +1033,7 @@ DELETE /therapies/:id
 **Global Requirements:**
 - ✅ Basic Authentication required
 - ✅ Admin can list/delete/convert; Admin/Doctor/Trainer can create/read/update
-- **Lead Status Values:** `New`, `Contacted`, `Qualified`, `Converted`, `Lost`
+- **Lead Status Values:** `New`, `Contacted`, `Qualified`, `Warm`, `Hot`, `Cold`, `Converted`, `Lost`
 
 #### 1. Create Lead
 ```
@@ -998,6 +1052,7 @@ POST /leads
   "interestedIn": "Premium Membership",
   "notes": "Prefers evening calls",
   "tags": ["premium", "warm"],
+  "followUpDate": "2026-04-05T00:00:00Z",
   "ownerId": "507f1f77bcf86cd799439099"
 }
 ```
@@ -1024,6 +1079,7 @@ PATCH /leads/:id
 **Authorization:** Admin, Doctor, Trainer
 
 **Notes:** Any subset of fields from create payload; at least one field required.
+**Field Notes:** `followUpDate` accepts ISO 8601 date-time strings.
 
 #### 5. Delete Lead
 ```
@@ -1503,6 +1559,9 @@ DELETE /schedules/:userId
   "New": "New",
   "Contacted": "Contacted",
   "Qualified": "Qualified",
+  "Warm": "Warm",
+  "Hot": "Hot",
+  "Cold": "Cold",
   "Converted": "Converted",
   "Lost": "Lost"
 }

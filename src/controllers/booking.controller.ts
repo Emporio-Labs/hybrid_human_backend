@@ -168,7 +168,7 @@ export const updateBookingById: RequestHandler = async (req, res, next) => {
 				...(reportId ? { report: reportId } : {}),
 			},
 			{
-				new: true,
+				returnDocument: "after",
 				runValidators: true,
 			},
 		);
@@ -230,7 +230,7 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 		const updatedBooking = await Booking.findByIdAndUpdate(
 			id,
 			{ status: parsedBody.data.status },
-			{ new: true, runValidators: true },
+			{ returnDocument: "after", runValidators: true },
 		);
 
 		if (!updatedBooking) {

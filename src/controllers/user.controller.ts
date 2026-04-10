@@ -6,6 +6,12 @@ import {
 	updateUserBodySchema,
 } from "../validators/user.validator";
 
+const canOnboard = (requester: Express.Request["user"], targetUserId: string) => {
+	if (!requester) return false;
+	if (requester.role === "admin") return true;
+	return requester.role === "user" && requester.id === targetUserId;
+};
+
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	if (
 		typeof idParam !== "string" ||
@@ -28,7 +34,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { password, ...rest } = parsedBody.data;
+	const { password, onboarded = false, ...rest } = parsedBody.data;
 
 	try {
 		const existingUser = await User.findOne({
@@ -42,6 +48,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 
 		const user = await User.create({
 			...rest,
+			onboarded,
 			passwordHash: password,
 		});
 
@@ -128,7 +135,7 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const updatedUser = await User.findByIdAndUpdate(id, updatePayload, {
-			new: true,
+			returnDocument: "after",
 			runValidators: true,
 		});
 
@@ -160,6 +167,59 @@ export const deleteUserById: RequestHandler = async (req, res, next) => {
 		}
 
 		res.status(200).json({ message: "User deleted" });
+	} catch (error) {
+		next(error);
+	}
+};
+
+// Allow a user to mark themselves onboarded (or admin to onboard any user)
+export const onboardUser: RequestHandler = async (req, res, next) => {
+	const id = getIdParam(req.params.id);
+
+	if (!id) {
+		res.status(400).json({ message: "Invalid user id" });
+		return;
+	}
+
+	if (!req.user || !canOnboard(req.user, id)) {
+		res.status(403).json({ message: "Forbidden" });
+		return;
+	}
+
+	const parsedBody = updateUserBodySchema.safeParse({
+		...req.body,
+		onboarded: true,
+	});
+
+	if (!parsedBody.success) {
+		res.status(400).json({
+			message: "Invalid onboarding payload",
+			errors: parsedBody.error.issues,
+		});
+		return;
+	}
+
+	const { password, ...rest } = parsedBody.data;
+	const updatePayload = {
+		...rest,
+		...(password ? { passwordHash: password } : {}),
+	};
+
+	try {
+		const updatedUser = await User.findByIdAndUpdate(id, updatePayload, {
+			returnDocument: "after",
+			runValidators: true,
+		});
+
+		if (!updatedUser) {
+			res.status(404).json({ message: "User not found" });
+			return;
+		}
+
+		res.status(200).json({
+			message: "User onboarded",
+			user: updatedUser,
+		});
 	} catch (error) {
 		next(error);
 	}

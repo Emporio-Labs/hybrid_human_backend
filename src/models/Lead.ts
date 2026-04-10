@@ -16,6 +16,7 @@ const leadSchema = new mongoose.Schema(
     interestedIn: { type: String, default: "" },
     notes: { type: String, default: "" },
     tags: { type: [String], default: [] },
+    followUpDate: { type: Date, default: null },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: "Admin" },
     convertedUser: {
       type: mongoose.Schema.Types.ObjectId,

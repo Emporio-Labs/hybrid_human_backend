@@ -108,7 +108,7 @@ export const updateAdminById: RequestHandler = async (req, res, next) => {
 
 	try {
 		const updatedAdmin = await Admin.findByIdAndUpdate(id, updatePayload, {
-			new: true,
+			returnDocument: "after",
 			runValidators: true,
 		});
 

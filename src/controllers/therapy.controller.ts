@@ -103,7 +103,7 @@ export const updateTherapyById: RequestHandler = async (req, res, next) => {
 			id,
 			parsedBody.data,
 			{
-				new: true,
+				returnDocument: "after",
 				runValidators: true,
 			},
 		);

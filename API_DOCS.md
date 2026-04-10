@@ -1680,7 +1680,7 @@ GET /health
 
 - All timestamps are in **ISO 8601** format (UTC)
 - All IDs are MongoDB **ObjectId** strings
-- Passwords are currently stored as **plain text** (⚠️ Security issue for production)
+- Passwords are stored as **bcrypt hashes** and never returned in API responses
 - Date fields accept various formats that coerce to Date objects
 - Array fields (like `specialities`, `todoIds`) default to empty arrays if not provided
 - At least one field is required for PATCH operations

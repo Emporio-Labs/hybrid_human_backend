@@ -4,9 +4,49 @@ import Doctor from "../models/Doctor";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
 import {
+	hashPassword,
+	isHashedPassword,
+	verifyPassword,
+} from "../utils/password";
+import {
 	loginBodySchema,
 	signupBodySchema,
 } from "../validators/auth.validator";
+
+type AppRole = "user" | "admin" | "doctor" | "trainer";
+
+type AuthDocument = {
+	_id: { toString(): string };
+	email: string;
+	passwordHash: string;
+	save: () => Promise<unknown>;
+};
+
+const matchAccount = async (
+	password: string,
+	role: AppRole,
+	account: AuthDocument | null,
+) => {
+	if (!account) {
+		return null;
+	}
+
+	const valid = await verifyPassword(password, account.passwordHash);
+	if (!valid) {
+		return null;
+	}
+
+	if (!isHashedPassword(account.passwordHash)) {
+		account.passwordHash = await hashPassword(password);
+		await account.save();
+	}
+
+	return {
+		id: account._id.toString(),
+		email: account.email,
+		role,
+	} as const;
+};
 
 export const signup: RequestHandler = async (req, res, next) => {
 	const parsedBody = signupBodySchema.safeParse(req.body);
@@ -23,6 +63,8 @@ export const signup: RequestHandler = async (req, res, next) => {
 		parsedBody.data;
 
 	try {
+		const passwordHash = await hashPassword(password);
+
 		const existingUser = await User.findOne({ email }).select("_id");
 
 		if (existingUser) {
@@ -38,7 +80,7 @@ export const signup: RequestHandler = async (req, res, next) => {
 			gender,
 			healthGoals,
 			onboarded: false,
-			passwordHash: password,
+			passwordHash,
 		});
 
 		res.status(201).json({
@@ -78,38 +120,17 @@ export const login: RequestHandler = async (req, res, next) => {
 		console.log("[AUTH][LOGIN] Looking up user/admin/doctor/trainer", { email });
 
 		const [user, admin, doctor, trainer] = await Promise.all([
-			User.findOne({ email }),
-			Admin.findOne({ email }),
-			Doctor.findOne({ email }),
-			Trainer.findOne({ email }),
+			User.findOne({ email }).select("+passwordHash"),
+			Admin.findOne({ email }).select("+passwordHash"),
+			Doctor.findOne({ email }).select("+passwordHash"),
+			Trainer.findOne({ email }).select("+passwordHash"),
 		]);
 
 		const matchedAccount =
-			user && user.passwordHash === password
-				? {
-						id: user._id.toString(),
-						email: user.email,
-						role: "user" as const,
-					}
-				: admin && admin.passwordHash === password
-					? {
-							id: admin._id.toString(),
-							email: admin.email,
-							role: "admin" as const,
-						}
-					: doctor && doctor.passwordHash === password
-						? {
-								id: doctor._id.toString(),
-								email: doctor.email,
-								role: "doctor" as const,
-							}
-						: trainer && trainer.passwordHash === password
-								? {
-										id: trainer._id.toString(),
-										email: trainer.email,
-										role: "trainer" as const,
-									}
-								: null;
+			(await matchAccount(password, "user", user)) ??
+			(await matchAccount(password, "admin", admin)) ??
+			(await matchAccount(password, "doctor", doctor)) ??
+			(await matchAccount(password, "trainer", trainer));
 
 		if (!matchedAccount) {
 			console.log("[AUTH][LOGIN] Invalid credentials", {

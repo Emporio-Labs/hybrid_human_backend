@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Lead from "../models/Lead";
 import User from "../models/User";
 import { LeadStatus } from "../models/Enums";
+import { hashPassword } from "../utils/password";
 import {
   convertLeadBodySchema,
   createLeadBodySchema,
@@ -219,6 +220,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
 
     const { username, phone, age, gender, healthGoals, password } =
       parsedBody.data;
+    const passwordHash = await hashPassword(password);
 
     const createdUser = await User.create({
       username: username ?? lead.leadName,
@@ -227,7 +229,7 @@ export const convertLeadToUser: RequestHandler = async (req, res, next) => {
       age,
       gender,
       healthGoals,
-      passwordHash: password,
+      passwordHash,
     });
 
     lead.status = LeadStatus.Converted;

@@ -1,20 +1,32 @@
 import mongoose from "mongoose";
 
-export default async function connectDB() {
-  try {
-    const connectionUrl = process.env.MONGODB_URL;
+let connectionPromise: Promise<typeof mongoose> | null = null;
 
-    if (!connectionUrl) {
-      throw new Error("Empty connection string for MongoDB connection");
-    }
+export default async function connectDB(): Promise<void> {
+  const connectionUrl = process.env.MONGODB_URL;
 
-    await mongoose.connect(connectionUrl, {
+  if (!connectionUrl) {
+    throw new Error("Empty connection string for MongoDB connection");
+  }
+
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
+
+  if (!connectionPromise) {
+    connectionPromise = mongoose.connect(connectionUrl, {
       serverSelectionTimeoutMS: 5000,
     });
+  }
 
+  try {
+    await connectionPromise;
     console.log("✅ MongoDB connected");
   } catch (error) {
+    connectionPromise = null;
     console.error("❌ MongoDB connection error:", error);
-    process.exit(1);
+    throw error;
+  } finally {
+    connectionPromise = null;
   }
 }

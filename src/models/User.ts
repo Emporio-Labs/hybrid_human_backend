@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema(
 		age: { type: String, required: true },
 		gender: { type: String, enum: Object.values(Gender), required: true },
 		healthGoals: { type: [String], default: [] },
-		passwordHash: { type: String, required: true },
+		passwordHash: { type: String, required: true, select: false },
 		onboarded: { type: Boolean, default: false },
 	},
 	{ timestamps: true },

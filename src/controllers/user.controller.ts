@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import User from "../models/User";
+import { hashPassword } from "../utils/password";
 import {
 	createUserBodySchema,
 	updateUserBodySchema,
@@ -37,6 +38,8 @@ export const createUser: RequestHandler = async (req, res, next) => {
 	const { password, onboarded = false, ...rest } = parsedBody.data;
 
 	try {
+		const passwordHash = await hashPassword(password);
+
 		const existingUser = await User.findOne({
 			email: parsedBody.data.email,
 		}).select("_id");
@@ -49,7 +52,7 @@ export const createUser: RequestHandler = async (req, res, next) => {
 		const user = await User.create({
 			...rest,
 			onboarded,
-			passwordHash: password,
+			passwordHash,
 		});
 
 		res.status(201).json({ message: "User created", user });
@@ -128,9 +131,10 @@ export const updateUserById: RequestHandler = async (req, res, next) => {
 	}
 
 	const { password, ...rest } = parsedBody.data;
+	const hashedPassword = password ? await hashPassword(password) : null;
 	const updatePayload = {
 		...rest,
-		...(password ? { passwordHash: password } : {}),
+		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 	};
 
 	try {
@@ -200,9 +204,10 @@ export const onboardUser: RequestHandler = async (req, res, next) => {
 	}
 
 	const { password, ...rest } = parsedBody.data;
+	const hashedPassword = password ? await hashPassword(password) : null;
 	const updatePayload = {
 		...rest,
-		...(password ? { passwordHash: password } : {}),
+		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 	};
 
 	try {

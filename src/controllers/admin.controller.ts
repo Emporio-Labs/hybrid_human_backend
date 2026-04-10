@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Admin from "../models/Admin";
+import { hashPassword } from "../utils/password";
 import {
 	createAdminBodySchema,
 	updateAdminBodySchema,
@@ -31,6 +32,8 @@ export const createAdmin: RequestHandler = async (req, res, next) => {
 	const { adminName, email, phone, password } = parsedBody.data;
 
 	try {
+		const passwordHash = await hashPassword(password);
+
 		const existingAdmin = await Admin.findOne({ email }).select("_id");
 
 		if (existingAdmin) {
@@ -42,7 +45,7 @@ export const createAdmin: RequestHandler = async (req, res, next) => {
 			adminName,
 			email,
 			phone,
-			passwordHash: password,
+			passwordHash,
 		});
 
 		res.status(201).json({ message: "Admin created", admin });
@@ -101,9 +104,10 @@ export const updateAdminById: RequestHandler = async (req, res, next) => {
 	}
 
 	const { password, ...rest } = parsedBody.data;
+	const hashedPassword = password ? await hashPassword(password) : null;
 	const updatePayload = {
 		...rest,
-		...(password ? { passwordHash: password } : {}),
+		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 	};
 
 	try {

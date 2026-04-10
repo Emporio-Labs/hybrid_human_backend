@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import mongoose from "mongoose";
 import Admin from "../src/models/Admin";
 import connectDB from "../src/utils/db";
+import { hashPassword } from "../src/utils/password";
 import { createAdminBodySchema } from "../src/validators/admin.validator";
 
 config();
@@ -21,7 +22,7 @@ function parseArgs(argv: string[]) {
 	for (let index = 0; index < argv.length; index += 1) {
 		const token = argv[index];
 
-		if (!token.startsWith("--")) {
+		if (!token || !token.startsWith("--")) {
 			continue;
 		}
 
@@ -68,11 +69,13 @@ async function main() {
 			process.exit(1);
 		}
 
+		const passwordHash = await hashPassword(parsed.data.password);
+
 		const admin = await Admin.create({
 			adminName: parsed.data.adminName,
 			email: parsed.data.email,
 			phone: parsed.data.phone,
-			passwordHash: parsed.data.password,
+			passwordHash,
 		});
 
 		console.log("Admin user created successfully.");

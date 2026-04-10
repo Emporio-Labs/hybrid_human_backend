@@ -3,6 +3,20 @@ import Admin from "../models/Admin";
 import Doctor from "../models/Doctor";
 import Trainer from "../models/Trainer";
 import User from "../models/User";
+import {
+	hashPassword,
+	isHashedPassword,
+	verifyPassword,
+} from "../utils/password";
+
+type AppRole = "admin" | "doctor" | "trainer" | "user";
+
+type AuthDocument = {
+	_id: { toString(): string };
+	email: string;
+	passwordHash: string;
+	save: () => Promise<unknown>;
+};
 
 const getCredentialsFromHeader = (
 	authorization: string | undefined,
@@ -54,47 +68,38 @@ export const authenticateBasicCredentials: RequestHandler = async (
 
 	try {
 		const [admin, doctor, trainer, user] = await Promise.all([
-			Admin.findOne({ email, passwordHash: password }).select("_id email"),
-			Doctor.findOne({ email, passwordHash: password }).select("_id email"),
-			Trainer.findOne({ email, passwordHash: password }).select("_id email"),
-			User.findOne({ email, passwordHash: password }).select("_id email"),
+			Admin.findOne({ email }).select("_id email +passwordHash"),
+			Doctor.findOne({ email }).select("_id email +passwordHash"),
+			Trainer.findOne({ email }).select("_id email +passwordHash"),
+			User.findOne({ email }).select("_id email +passwordHash"),
 		]);
 
-		if (admin) {
-			req.user = {
-				id: admin._id.toString(),
-				email: admin.email,
-				role: "admin",
-			};
-			next();
-			return;
-		}
+		const candidates: Array<{ role: AppRole; account: AuthDocument | null }> = [
+			{ role: "admin", account: admin },
+			{ role: "doctor", account: doctor },
+			{ role: "trainer", account: trainer },
+			{ role: "user", account: user },
+		];
 
-		if (doctor) {
-			req.user = {
-				id: doctor._id.toString(),
-				email: doctor.email,
-				role: "doctor",
-			};
-			next();
-			return;
-		}
+		for (const candidate of candidates) {
+			if (!candidate.account) {
+				continue;
+			}
 
-		if (trainer) {
-			req.user = {
-				id: trainer._id.toString(),
-				email: trainer.email,
-				role: "trainer",
-			};
-			next();
-			return;
-		}
+			const valid = await verifyPassword(password, candidate.account.passwordHash);
+			if (!valid) {
+				continue;
+			}
 
-		if (user) {
+			if (!isHashedPassword(candidate.account.passwordHash)) {
+				candidate.account.passwordHash = await hashPassword(password);
+				await candidate.account.save();
+			}
+
 			req.user = {
-				id: user._id.toString(),
-				email: user.email,
-				role: "user",
+				id: candidate.account._id.toString(),
+				email: candidate.account.email,
+				role: candidate.role,
 			};
 			next();
 			return;

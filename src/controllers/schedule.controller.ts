@@ -253,7 +253,9 @@ export const updateSchedule: RequestHandler = async (req, res, next) => {
 		}
 
 		if (todoIds !== undefined) {
-			schedule.todos = todoIds;
+			schedule.todos = todoIds.map((todoId) =>
+				new mongoose.Types.ObjectId(todoId),
+			);
 		}
 
 		await schedule.save();

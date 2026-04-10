@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Doctor from "../models/Doctor";
+import { hashPassword } from "../utils/password";
 import {
 	createDoctorBodySchema,
 	updateDoctorBodySchema,
@@ -30,9 +31,10 @@ export const createDoctor: RequestHandler = async (req, res, next) => {
 
 	try {
 		const { password, ...rest } = parsedBody.data;
+		const passwordHash = await hashPassword(password);
 		const doctor = await Doctor.create({
 			...rest,
-			passwordHash: password,
+			passwordHash,
 		});
 		res.status(201).json({ message: "Doctor created", doctor });
 	} catch (error) {
@@ -90,9 +92,10 @@ export const updateDoctorById: RequestHandler = async (req, res, next) => {
 	}
 
 	const { password, ...rest } = parsedBody.data;
+	const hashedPassword = password ? await hashPassword(password) : null;
 	const updatePayload = {
 		...rest,
-		...(password ? { passwordHash: password } : {}),
+		...(hashedPassword ? { passwordHash: hashedPassword } : {}),
 	};
 
 	try {

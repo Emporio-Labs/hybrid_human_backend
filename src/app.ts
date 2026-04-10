@@ -14,6 +14,11 @@ import therapyRouter from "./routes/therapy.routes";
 import trainerRouter from "./routes/trainer.routes";
 import userRouter from "./routes/user.routes";
 import webhookRouter from "./routes/webhook.route";
+import {
+	buildApiErrorEnvelope,
+	isApiErrorEnvelope,
+	mapStatusToErrorCode,
+} from "./utils/api-error";
 
 config();
 
@@ -39,6 +44,77 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+app.use((_req, res, next) => {
+	const originalJson = res.json.bind(res);
+	const normalizeDetails = (value: unknown): unknown => {
+		if (!Array.isArray(value)) {
+			return value;
+		}
+
+		const details: Record<string, string> = {};
+		for (const item of value) {
+			if (!item || typeof item !== "object") {
+				continue;
+			}
+
+			const issue = item as { path?: unknown; message?: unknown };
+			const field =
+				Array.isArray(issue.path) && issue.path.length > 0
+					? issue.path.map(String).join(".")
+					: "body";
+
+			if (!details[field] && typeof issue.message === "string") {
+				details[field] = issue.message;
+			}
+		}
+
+		return Object.keys(details).length > 0 ? details : value;
+	};
+
+	res.json = ((body: unknown) => {
+		if (res.statusCode < 400) {
+			return originalJson(body as never);
+		}
+
+		if (isApiErrorEnvelope(body)) {
+			return originalJson(body as never);
+		}
+
+		if (body && typeof body === "object" && !Array.isArray(body)) {
+			const payload = body as Record<string, unknown>;
+			const details = payload.details ?? normalizeDetails(payload.errors);
+			const message =
+				typeof payload.error === "string"
+					? payload.error
+					: typeof payload.message === "string"
+						? payload.message
+						: "Request failed";
+			const code = mapStatusToErrorCode(
+				res.statusCode,
+				typeof payload.code === "string" ? payload.code : undefined,
+				details,
+			);
+
+			return originalJson(
+				buildApiErrorEnvelope({
+					error: message,
+					code,
+					details,
+				}) as never,
+			);
+		}
+
+		return originalJson(
+			buildApiErrorEnvelope({
+				error: typeof body === "string" ? body : "Request failed",
+				code: mapStatusToErrorCode(res.statusCode),
+			}) as never,
+		);
+	}) as typeof res.json;
+
+	next();
+});
+
 app.use((req, res, next) => {
 	const start = Date.now();
 
@@ -72,5 +148,27 @@ app.use("/webhook", webhookRouter);
 app.get("/health", (_req, res) => {
 	res.status(200).json({ ok: true });
 });
+
+app.use(
+	(
+		error: unknown,
+		_req: express.Request,
+		res: express.Response,
+		_next: express.NextFunction,
+	) => {
+		if (res.headersSent) {
+			return;
+		}
+
+		console.error("[UNHANDLED_ERROR]", error);
+
+		res.status(500).json(
+			buildApiErrorEnvelope({
+				error: "Internal server error",
+				code: mapStatusToErrorCode(500),
+			}),
+		);
+	},
+);
 
 export default app;

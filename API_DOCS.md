@@ -2,7 +2,7 @@
 
 **Base URL:** `http://localhost:3000`  
 **API Version:** 1.0.0  
-**Last Updated:** March 27, 2026
+**Last Updated:** April 11, 2026
 
 ---
 
@@ -63,7 +63,7 @@ The system supports 4 role types:
 |-------|---------|------|-----------|
 | `/auth` | User authentication | ❌ No | 2 endpoints |
 | `/admins` | Admin management | ✅ Admin only | 5 endpoints |
-| `/users` | Member management | ✅ Admin + Doctor (read), Admin (write), User self-onboard | 6 endpoints |
+| `/users` | Member management | ✅ Admin + Doctor (read), Admin/User self (updates), User self-service profile/report/password | 10 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
 | `/slots` | Time slot management | ✅ Admin only | 5 endpoints |
@@ -76,7 +76,7 @@ The system supports 4 role types:
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 71
+**Total Endpoints:** 75
 
 ---
 
@@ -101,14 +101,18 @@ POST /auth/signup
   "password": "securePassword123",
   "age": 28,
   "gender": 0,
-  "healthGoals": "Build muscle and lose weight"
+  "healthGoals": ["Build muscle", "Lose weight"]
 }
 ```
+
+**Validation Notes:**
+- `password` must be at least 8 characters and include at least one letter and one number.
+- `age` must be an integer in range `0` to `130`.
 
 **Response (201 Created):**
 ```json
 {
-  "message": "User registered successfully",
+  "message": "User signup successful",
   "userId": "507f1f77bcf86cd799439011",
   "onboarded": false
 }
@@ -329,13 +333,16 @@ DELETE /admins/:id
 
 **Global Requirements:**
 - ✅ Basic Authentication required
-- ✅ Admin role for create/update/delete (except onboarding)
-- ✅ Users can onboard themselves; admins can onboard any user
+- ✅ Admin can create and delete users
+- ✅ Admin or user-self can update profile (`PATCH /users/:id`)
+- ✅ Users can access self-service endpoints (`/me`, `/me/reports`, `/me/password`)
 
 #### 1. Create User
 ```
 POST /users
 ```
+
+**Authorization:** Admin only
 
 **Request Body:**
 ```json
@@ -344,11 +351,18 @@ POST /users
   "email": "john@example.com",
   "phone": "+1234567890",
   "password": "securePassword123",
-  "age": "28",
+  "age": 28,
   "gender": "Male",
-  "healthGoals": ["Build muscle", "Improve stamina"]
+  "healthGoals": ["Build muscle", "Improve stamina"],
+  "dateOfBirth": "1998-09-12T00:00:00.000Z",
+  "emergencyContact": "+1987654321",
+  "address": "221B Baker Street"
 }
 ```
+
+**Validation Notes:**
+- `password` must be at least 8 characters and include at least one letter and one number.
+- `age` must be an integer in range `0` to `130`.
 
 **Response (201 Created):**
 ```json
@@ -359,9 +373,12 @@ POST /users
     "username": "john_doe",
     "email": "john@example.com",
     "phone": "+1234567890",
-    "age": "28",
+    "age": 28,
     "gender": "Male",
     "healthGoals": ["Build muscle", "Improve stamina"],
+    "dateOfBirth": "1998-09-12T00:00:00.000Z",
+    "emergencyContact": "+1987654321",
+    "address": "221B Baker Street",
     "onboarded": false,
     "createdAt": "2026-03-21T10:00:00Z",
     "updatedAt": "2026-03-21T10:00:00Z"
@@ -376,7 +393,7 @@ POST /users
 GET /users
 ```
 
-**Auth:** Admin or Doctor
+**Authorization:** Admin or Doctor
 
 **Response (200 OK):**
 ```json
@@ -387,7 +404,7 @@ GET /users
       "username": "john_doe",
       "email": "john@example.com",
       "phone": "+1234567890",
-      "age": "28",
+      "age": 28,
       "gender": "Male",
       "healthGoals": ["Build muscle", "Improve stamina"],
       "createdAt": "2026-03-21T10:00:00Z",
@@ -407,7 +424,7 @@ GET /users/:id
 **URL Params:**
 - `id` (string, required) — User MongoDB ObjectId
 
-**Auth:** Admin or Doctor
+**Authorization:** Admin or Doctor
 
 **Response (200 OK):**
 ```json
@@ -417,7 +434,7 @@ GET /users/:id
     "username": "john_doe",
     "email": "john@example.com",
     "phone": "+1234567890",
-    "age": "28",
+    "age": 28,
     "gender": "Male",
     "healthGoals": ["Build muscle", "Improve stamina"],
     "onboarded": false,
@@ -429,35 +446,124 @@ GET /users/:id
 
 ---
 
-#### 4. Update User
+#### 4. Get My User
 ```
-PATCH /users/:id
+GET /users/me
 ```
 
-**URL Params:**
-- `id` (string, required) — User MongoDB ObjectId
-
-**Request Body (all fields optional):**
-```json
-{
-  "username": "john_updated",
-  "phone": "+1987654321",
-  "healthGoals": ["Weight loss", "Sleep improvement"],
-  "onboarded": true
-}
-```
+**Authorization:** User only
 
 **Response (200 OK):**
 ```json
 {
-  "message": "User updated",
-  "user": { /* updated user object */ }
+  "user": {
+    "_id": "507f1f77bcf86cd799439011",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "age": 28,
+    "gender": "Male",
+    "healthGoals": ["Build muscle", "Improve stamina"],
+    "dateOfBirth": "1998-09-12T00:00:00.000Z",
+    "emergencyContact": "+1987654321",
+    "address": "221B Baker Street",
+    "onboarded": true
+  }
 }
 ```
 
 ---
 
-#### 5. Onboard User (self or admin)
+#### 5. Get My Reports
+```
+GET /users/me/reports
+```
+
+**Authorization:** User only
+
+**Response (200 OK):**
+```json
+{
+  "reports": [
+    {
+      "id": "report-001",
+      "title": "April Personalized Optimization Report",
+      "summary": "Your recovery markers improved, but sleep consistency needs attention.",
+      "suggestions": [
+        "Maintain 7.5-8 hours sleep window for 14 days.",
+        "Shift caffeine cutoff to 2 PM."
+      ],
+      "recommendations": [
+        "Maintain 7.5-8 hours sleep window for 14 days.",
+        "Shift caffeine cutoff to 2 PM."
+      ],
+      "insights": [
+        "Maintain 7.5-8 hours sleep window for 14 days.",
+        "Shift caffeine cutoff to 2 PM."
+      ],
+      "generated_date": "2026-04-10T08:00:00.000Z",
+      "pdf_url": "http://localhost:3000/users/me/reports/report-001/pdf"
+    }
+  ]
+}
+```
+
+---
+
+#### 6. Get My Report PDF
+```
+GET /users/me/reports/:id/pdf
+```
+
+**Authorization:** User only
+
+**URL Params:**
+- `id` (string, required) — Report ObjectId
+
+**Current Behavior:**
+- Endpoint validates ownership and currently returns `501 Not Implemented` while PDF byte storage/streaming is being finalized.
+
+**Error Responses:**
+- `403` — Report does not belong to authenticated user
+- `404` — Report not found
+- `501` — PDF endpoint not available yet
+
+---
+
+#### 7. Update My Password
+```
+PATCH /users/me/password
+```
+
+**Authorization:** User only
+
+**Request Body:**
+```json
+{
+  "currentPassword": "old-password",
+  "newPassword": "newStrongPass123"
+}
+```
+
+**Validation Notes:**
+- `newPassword` must be at least 8 characters and include at least one letter and one number.
+- `newPassword` must be different from `currentPassword`.
+
+**Success Response (200 OK):**
+```json
+{
+  "message": "Password updated successfully"
+}
+```
+
+**Error Responses:**
+- `400` — Invalid payload or weak password
+- `401` — Current password is incorrect
+- `404` — Authenticated user not found
+
+---
+
+#### 8. Onboard User (self or admin)
 ```
 PATCH /users/:id/onboard
 ```
@@ -474,7 +580,7 @@ PATCH /users/:id/onboard
 {
   "username": "john_doe",
   "phone": "+1234567890",
-  "age": "28",
+  "age": 28,
   "gender": "Male",
   "healthGoals": ["Build muscle"],
   "onboarded": true
@@ -490,7 +596,7 @@ PATCH /users/:id/onboard
     "username": "john_doe",
     "email": "john@example.com",
     "phone": "+1234567890",
-    "age": "28",
+    "age": 28,
     "gender": "Male",
     "healthGoals": ["Build muscle"],
     "onboarded": true,
@@ -506,10 +612,48 @@ PATCH /users/:id/onboard
 
 ---
 
-#### 6. Delete User
+#### 9. Update User
+```
+PATCH /users/:id
+```
+
+**Authorization:** Admin (any user) or User (self)
+
+**URL Params:**
+- `id` (string, required) — User MongoDB ObjectId
+
+**Request Body (all fields optional):**
+```json
+{
+  "username": "john_updated",
+  "phone": "+1987654321",
+  "age": 29,
+  "gender": "Male",
+  "healthGoals": ["Weight loss", "Sleep improvement"],
+  "dateOfBirth": "1998-09-12T00:00:00.000Z",
+  "emergencyContact": "+1987654321",
+  "address": "221B Baker Street"
+}
+```
+
+**Notes:**
+- For role `user`, password changes are not allowed in this endpoint. Use `PATCH /users/me/password`.
+
+**Response (200 OK):**
+```json
+{
+  "user": { /* updated user object */ }
+}
+```
+
+---
+
+#### 10. Delete User
 ```
 DELETE /users/:id
 ```
+
+**Authorization:** Admin only
 
 **URL Params:**
 - `id` (string, required) — User MongoDB ObjectId
@@ -1582,51 +1726,63 @@ DELETE /schedules/:userId
 | `403` | Forbidden | Insufficient permissions |
 | `404` | Not Found | Resource doesn't exist |
 | `409` | Conflict | Email/resource already exists |
+| `501` | Not Implemented | Feature is intentionally pending (for example report PDF streaming) |
 | `500` | Server Error | Unexpected server error |
 
 ### Error Response Format
 ```json
 {
-  "message": "Error description",
-  "errors": [
-    {
-      "code": "validation_error",
-      "path": ["fieldName"],
-      "message": "Field validation failed"
-    }
-  ]
+  "error": "Error description",
+  "code": "VALIDATION_ERROR",
+  "details": {
+    "fieldName": "Field validation failed"
+  }
 }
 ```
+
+**Notes:**
+- Error responses are normalized to the envelope above.
+- `details` is optional and may contain field-level validation details.
+- Common `code` values include: `VALIDATION_ERROR`, `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `NOT_IMPLEMENTED`, `INTERNAL_ERROR`, `API_ERROR`.
 
 ### Example Error Responses
 
 **401 Unauthorized:**
 ```json
 {
-  "message": "Unauthorized"
+  "error": "Unauthorized",
+  "code": "UNAUTHORIZED"
 }
 ```
 
 **403 Forbidden:**
 ```json
 {
-  "message": "Forbidden"
+  "error": "Forbidden",
+  "code": "FORBIDDEN"
 }
 ```
 
 **400 Bad Request (Validation):**
 ```json
 {
-  "message": "Invalid booking payload",
-  "errors": [
-    {
-      "code": "invalid_type",
-      "expected": "string",
-      "received": "undefined",
-      "path": ["userId"],
-      "message": "Required"
-    }
-  ]
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "details": {
+    "userId": "Required"
+  }
+}
+```
+
+**501 Not Implemented:**
+```json
+{
+  "error": "Report PDF endpoint is not available yet",
+  "code": "NOT_IMPLEMENTED",
+  "details": {
+    "id": "507f1f77bcf86cd799439011",
+    "hasPdf": true
+  }
 }
 ```
 
@@ -1696,4 +1852,4 @@ For questions or issues with the API:
 3. Verify Basic Auth headers are properly formatted
 4. Check that resource IDs are valid MongoDB ObjectIds
 
-**Last Updated:** March 21, 2026
+**Last Updated:** April 11, 2026

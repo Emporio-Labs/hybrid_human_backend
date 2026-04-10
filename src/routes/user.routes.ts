@@ -4,8 +4,11 @@ import {
 	deleteUserById,
 	getAllUsers,
 	getMyUser,
+	getMyUserReportPdf,
+	getMyUserReports,
 	getUserById,
 	onboardUser,
+	updateMyPassword,
 	updateUserById,
 } from "../controllers/user.controller";
 import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
@@ -17,13 +20,12 @@ userRouter.use(authenticateBasicCredentials);
 userRouter.post("/", authorize(["admin"]), createUser);
 userRouter.get("/", authorize(["admin", "doctor"]), getAllUsers);
 userRouter.get("/me", authorize(["user"]), getMyUser);
+userRouter.get("/me/reports", authorize(["user"]), getMyUserReports);
+userRouter.get("/me/reports/:id/pdf", authorize(["user"]), getMyUserReportPdf);
+userRouter.patch("/me/password", authorize(["user"]), updateMyPassword);
 userRouter.get("/:id", authorize(["admin", "doctor"]), getUserById);
-userRouter.patch(
-	"/:id/onboard",
-	authorize(["admin", "user"]),
-	onboardUser,
-);
-userRouter.patch("/:id", authorize(["admin"]), updateUserById);
+userRouter.patch("/:id/onboard", authorize(["admin", "user"]), onboardUser);
+userRouter.patch("/:id", authorize(["admin", "user"]), updateUserById);
 userRouter.delete("/:id", authorize(["admin"]), deleteUserById);
 
 export default userRouter;

@@ -6,6 +6,7 @@ const membershipStatusValues = Object.values(MembershipStatus).map(String);
 export const createMembershipBodySchema = z.object({
 	userId: z.string().trim().optional(),
 	planName: z.string().trim().min(1),
+	creditsIncluded: z.coerce.number().int().nonnegative().default(0),
 	status: z.enum(membershipStatusValues as [string, ...string[]]).optional(),
 	price: z.number().nonnegative(),
 	currency: z.string().trim().min(1).default("USD"),

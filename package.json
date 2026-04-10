@@ -6,7 +6,8 @@
 	"scripts": {
 		"dev": "bun run index.ts",
 		"start": "bun run index.ts",
-		"create:admin": "bun run scripts/create-admin.ts"
+		"create:admin": "bun run scripts/create-admin.ts",
+		"migrate:credits": "bun run scripts/migrate-credits.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.8",

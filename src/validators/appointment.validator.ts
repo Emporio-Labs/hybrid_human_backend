@@ -6,7 +6,9 @@ export const createAppointmentBodySchema = z.object({
 	userId: z.string().min(1),
 	slotId: z.string().min(1),
 	doctorId: z.string().min(1),
+	serviceId: z.string().min(1).optional(),
 	reportId: z.string().min(1).optional(),
+	bypassCredits: z.coerce.boolean().optional().default(false),
 });
 
 export const updateAppointmentBodySchema = z
@@ -14,6 +16,7 @@ export const updateAppointmentBodySchema = z
 		appointmentDate: z.coerce.date().optional(),
 		slotId: z.string().min(1).optional(),
 		doctorId: z.string().min(1).optional(),
+		serviceId: z.string().min(1).optional(),
 		reportId: z.string().min(1).optional(),
 	})
 	.refine((payload) => Object.keys(payload).length > 0, {

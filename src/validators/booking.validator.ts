@@ -7,6 +7,7 @@ export const createBookingBodySchema = z.object({
 	slotId: z.string().min(1),
 	serviceId: z.string().min(1),
 	reportId: z.string().min(1).optional(),
+	bypassCredits: z.coerce.boolean().optional().default(false),
 });
 
 export const updateBookingBodySchema = z

@@ -1,0 +1,170 @@
+import type { RequestHandler } from "express";
+import mongoose from "mongoose";
+import {
+	addCreditsToMembership,
+	CreditServiceError,
+	getUserCreditBalance,
+	getUserCreditHistory,
+} from "../utils/credit.service";
+import {
+	creditHistoryQuerySchema,
+	topUpCreditsBodySchema,
+} from "../validators/credit.validator";
+
+const getIdParam = (idParam: string | string[] | undefined): string | null => {
+	if (
+		typeof idParam !== "string" ||
+		!mongoose.Types.ObjectId.isValid(idParam)
+	) {
+		return null;
+	}
+
+	return idParam;
+};
+
+const mapCreditServiceError = (
+	error: CreditServiceError,
+): { status: number; message: string } => {
+	switch (error.code) {
+		case "NO_ACTIVE_MEMBERSHIP":
+			return { status: 404, message: error.message };
+		case "INSUFFICIENT_CREDITS":
+			return { status: 402, message: error.message };
+		default:
+			return { status: 400, message: error.message };
+	}
+};
+
+export const getMyCreditBalance: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({ message: "Only users can access this endpoint" });
+		return;
+	}
+
+	try {
+		const balance = await getUserCreditBalance(req.user.id);
+		res.status(200).json(balance);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getMyCreditHistory: RequestHandler = async (req, res, next) => {
+	if (!req.user || req.user.role !== "user") {
+		res.status(403).json({ message: "Only users can access this endpoint" });
+		return;
+	}
+
+	const parsedQuery = creditHistoryQuerySchema.safeParse(req.query);
+	if (!parsedQuery.success) {
+		res.status(400).json({
+			message: "Invalid credit history query",
+			errors: parsedQuery.error.issues,
+		});
+		return;
+	}
+
+	try {
+		const history = await getUserCreditHistory({
+			userId: req.user.id,
+			limit: parsedQuery.data.limit,
+			sourceType: parsedQuery.data.sourceType,
+		});
+		res.status(200).json(history);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getUserCreditBalanceById: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid userId" });
+		return;
+	}
+
+	try {
+		const balance = await getUserCreditBalance(userId);
+		res.status(200).json(balance);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const getUserCreditHistoryById: RequestHandler = async (
+	req,
+	res,
+	next,
+) => {
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid userId" });
+		return;
+	}
+
+	const parsedQuery = creditHistoryQuerySchema.safeParse(req.query);
+	if (!parsedQuery.success) {
+		res.status(400).json({
+			message: "Invalid credit history query",
+			errors: parsedQuery.error.issues,
+		});
+		return;
+	}
+
+	try {
+		const history = await getUserCreditHistory({
+			userId,
+			limit: parsedQuery.data.limit,
+			sourceType: parsedQuery.data.sourceType,
+		});
+		res.status(200).json(history);
+	} catch (error) {
+		next(error);
+	}
+};
+
+export const topUpUserCreditsById: RequestHandler = async (req, res, next) => {
+	const userId = getIdParam(req.params.userId);
+	if (!userId) {
+		res.status(400).json({ message: "Invalid userId" });
+		return;
+	}
+
+	if (!req.user || req.user.role !== "admin") {
+		res.status(403).json({ message: "Only admins can top up credits" });
+		return;
+	}
+
+	const parsedBody = topUpCreditsBodySchema.safeParse(req.body);
+	if (!parsedBody.success) {
+		res.status(400).json({
+			message: "Invalid top-up payload",
+			errors: parsedBody.error.issues,
+		});
+		return;
+	}
+
+	try {
+		const result = await addCreditsToMembership({
+			userId,
+			membershipId: parsedBody.data.membershipId,
+			amount: parsedBody.data.amount,
+			reason: parsedBody.data.reason ?? "Admin credit top-up",
+			actorId: req.user.id,
+			actorRole: req.user.role,
+		});
+		res.status(200).json({ message: "Credits topped up", ...result });
+	} catch (error) {
+		if (error instanceof CreditServiceError) {
+			const creditError = mapCreditServiceError(error);
+			res.status(creditError.status).json({ message: creditError.message });
+			return;
+		}
+
+		next(error);
+	}
+};

@@ -1,6 +1,13 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
 import Booking from "../models/Bookings";
+import { BookingStatus, CreditTransactionSource } from "../models/Enums";
+import Service from "../models/Service";
+import {
+	CreditServiceError,
+	consumeCredits,
+	refundCreditsBySource,
+} from "../utils/credit.service";
 import {
 	changeBookingStatusBodySchema,
 	createBookingBodySchema,
@@ -26,6 +33,27 @@ const getRequiredAuthenticatedUser = (req: Parameters<RequestHandler>[0]) => {
 	return req.user;
 };
 
+const isCancelledBookingStatus = (status: unknown): boolean =>
+	status === BookingStatus.Cancelled ||
+	status === String(BookingStatus.Cancelled) ||
+	status === "Cancelled";
+
+const mapCreditServiceError = (
+	error: CreditServiceError,
+): { status: number; message: string } => {
+	switch (error.code) {
+		case "NO_ACTIVE_MEMBERSHIP":
+			return {
+				status: 403,
+				message: "No active membership with available credits",
+			};
+		case "INSUFFICIENT_CREDITS":
+			return { status: 402, message: "Insufficient credits" };
+		default:
+			return { status: 400, message: error.message };
+	}
+};
+
 export const createBooking: RequestHandler = async (req, res, next) => {
 	const parsedBody = createBookingBodySchema.safeParse(req.body);
 
@@ -44,7 +72,8 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { bookingDate, userId, slotId, serviceId, reportId } = parsedBody.data;
+	const { bookingDate, userId, slotId, serviceId, reportId, bypassCredits } =
+		parsedBody.data;
 	const targetUserId = requester.role === "user" ? requester.id : userId;
 
 	if (!targetUserId) {
@@ -62,7 +91,23 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	if (bypassCredits && requester.role !== "admin") {
+		res
+			.status(403)
+			.json({ message: "Only admins can bypass credit consumption" });
+		return;
+	}
+
 	try {
+		const service = await Service.findById(serviceId).select("_id creditCost");
+
+		if (!service) {
+			res.status(404).json({ message: "Service not found" });
+			return;
+		}
+
+		const creditCost = Math.max(1, Number(service.creditCost ?? 1));
+
 		const booking = await Booking.create({
 			bookingDate,
 			user: targetUserId,
@@ -71,7 +116,38 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			...(reportId ? { report: reportId } : {}),
 		});
 
-		res.status(201).json({ message: "Booking created", booking });
+		if (!bypassCredits) {
+			try {
+				await consumeCredits({
+					userId: targetUserId,
+					amount: creditCost,
+					sourceType: CreditTransactionSource.Booking,
+					sourceId: booking._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Booking ${booking._id.toString()}`,
+				});
+			} catch (error) {
+				await Booking.findByIdAndDelete(booking._id).catch(() => null);
+
+				if (error instanceof CreditServiceError) {
+					const creditError = mapCreditServiceError(error);
+					res.status(creditError.status).json({ message: creditError.message });
+					return;
+				}
+
+				throw error;
+			}
+		}
+
+		res.status(201).json({
+			message: "Booking created",
+			booking,
+			credits: {
+				consumed: bypassCredits ? 0 : creditCost,
+				bypassed: bypassCredits,
+			},
+		});
 	} catch (error) {
 		next(error);
 	}
@@ -226,21 +302,45 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	try {
-		const updatedBooking = await Booking.findByIdAndUpdate(
-			id,
-			{ status: parsedBody.data.status },
-			{ returnDocument: "after", runValidators: true },
-		);
+	const requester = getRequiredAuthenticatedUser(req);
 
-		if (!updatedBooking) {
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
+	try {
+		const booking = await Booking.findById(id);
+
+		if (!booking) {
 			res.status(404).json({ message: "Booking not found" });
 			return;
 		}
 
-		res
-			.status(200)
-			.json({ message: "Booking status changed", booking: updatedBooking });
+		const wasCancelled = isCancelledBookingStatus(booking.status);
+		booking.status = parsedBody.data.status;
+		await booking.save();
+
+		let refundedCredits = 0;
+
+		if (!wasCancelled && isCancelledBookingStatus(parsedBody.data.status)) {
+			const refundResult = await refundCreditsBySource({
+				userId: booking.user.toString(),
+				sourceType: CreditTransactionSource.Booking,
+				sourceId: booking._id.toString(),
+				actorId: requester.id,
+				actorRole: requester.role,
+				reason: `Booking ${booking._id.toString()} cancelled`,
+			});
+
+			refundedCredits = refundResult.refunded;
+		}
+
+		res.status(200).json({
+			message: "Booking status changed",
+			booking,
+			credits: { refunded: refundedCredits },
+		});
 	} catch (error) {
 		next(error);
 	}

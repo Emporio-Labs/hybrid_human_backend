@@ -7,7 +7,10 @@ import {
 } from "../validators/membership.validator";
 
 const getIdParam = (idParam: string | string[] | undefined): string | null => {
-	if (typeof idParam !== "string" || !mongoose.Types.ObjectId.isValid(idParam)) {
+	if (
+		typeof idParam !== "string" ||
+		!mongoose.Types.ObjectId.isValid(idParam)
+	) {
 		return null;
 	}
 
@@ -53,7 +56,8 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { userId, startDate, endDate, ...rest } = parsedBody.data;
+	const { userId, startDate, endDate, creditsIncluded, ...rest } =
+		parsedBody.data;
 
 	if (!userId) {
 		res.status(400).json({ message: "userId is required" });
@@ -86,6 +90,8 @@ export const createMembership: RequestHandler = async (req, res, next) => {
 	try {
 		const membership = await Membership.create({
 			...rest,
+			creditsIncluded,
+			creditsRemaining: creditsIncluded,
 			user: userId,
 			startDate: startDateValue,
 			...(endDateValue ? { endDate: endDateValue } : {}),
@@ -162,7 +168,8 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
-	const { userId, startDate, endDate, ...rest } = parsedBody.data;
+	const { userId, startDate, endDate, creditsIncluded, ...rest } =
+		parsedBody.data;
 
 	if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
 		res.status(400).json({ message: "Invalid userId" });
@@ -188,14 +195,35 @@ export const updateMembershipById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
+		const existingMembership = await Membership.findById(id).select(
+			"_id creditsIncluded creditsRemaining",
+		);
+
+		if (!existingMembership) {
+			res.status(404).json({ message: "Membership not found" });
+			return;
+		}
+
+		const updatePayload: Record<string, unknown> = {
+			...(userId ? { user: userId } : {}),
+			...(startDateValue ? { startDate: startDateValue } : {}),
+			...(endDateValue ? { endDate: endDateValue } : {}),
+			...rest,
+		};
+
+		if (typeof creditsIncluded === "number") {
+			const includedDelta =
+				creditsIncluded - (existingMembership.creditsIncluded ?? 0);
+			updatePayload.creditsIncluded = creditsIncluded;
+			updatePayload.creditsRemaining = Math.max(
+				0,
+				(existingMembership.creditsRemaining ?? 0) + includedDelta,
+			);
+		}
+
 		const updatedMembership = await Membership.findByIdAndUpdate(
 			id,
-			{
-				...(userId ? { user: userId } : {}),
-				...(startDateValue ? { startDate: startDateValue } : {}),
-				...(endDateValue ? { endDate: endDateValue } : {}),
-				...rest,
-			},
+			updatePayload,
 			{ returnDocument: "after", runValidators: true },
 		);
 

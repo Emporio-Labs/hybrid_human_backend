@@ -5,6 +5,8 @@ const membershipSchema = new mongoose.Schema(
 	{
 		user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
 		planName: { type: String, required: true },
+		creditsIncluded: { type: Number, required: true, min: 0, default: 0 },
+		creditsRemaining: { type: Number, required: true, min: 0, default: 0 },
 		status: {
 			type: String,
 			enum: Object.values(MembershipStatus),
@@ -21,5 +23,11 @@ const membershipSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default (mongoose.models.Membership as mongoose.Model<any>) ||
-	mongoose.model("Membership", membershipSchema);
+membershipSchema.index({ user: 1, status: 1, endDate: 1, startDate: 1 });
+membershipSchema.index({ user: 1, endDate: 1 });
+
+type MembershipDocument = mongoose.InferSchemaType<typeof membershipSchema>;
+
+export default (mongoose.models
+	.Membership as mongoose.Model<MembershipDocument>) ||
+	mongoose.model<MembershipDocument>("Membership", membershipSchema);

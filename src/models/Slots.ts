@@ -10,4 +10,5 @@ const slotSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default mongoose.model("Slot", slotSchema);
+export default (mongoose.models.Slot as mongoose.Model<any>) ||
+	mongoose.model("Slot", slotSchema);

@@ -1,5 +1,4 @@
 import { google } from "googleapis";
-import { PDFParse } from "pdf-parse";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -116,6 +115,8 @@ const extractPdfText = async (
   attachmentId: string,
 ): Promise<string> => {
   try {
+    const { PDFParse } = await import("pdf-parse");
+
     const res = await gmail.users.messages.attachments.get({
       userId: "me",
       messageId,

@@ -19,31 +19,16 @@ config();
 
 const app = express();
 
-const allowedOrigins = new Set(
-	(
-		process.env.CLIENT_URLS ??
-		process.env.CLIENT_URL ??
-		"http://localhost:3001,http://localhost:3002"
-	)
-		.split(",")
-		.map((origin) => origin.trim())
-		.filter(Boolean),
-);
-
 app.use((req, res, next) => {
-	const origin = req.headers.origin;
-
-	if (origin && allowedOrigins.has(origin)) {
-		res.setHeader("Access-Control-Allow-Origin", origin);
-		res.setHeader("Vary", "Origin");
-	}
+	// TODO: Temporary MVP setting. Lock this down to specific frontend origins before production hardening.
+	res.setHeader("Access-Control-Allow-Origin", "*");
 
 	res.setHeader(
 		"Access-Control-Allow-Methods",
 		"GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	);
 	res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-	res.setHeader("Access-Control-Allow-Credentials", "true");
+	res.setHeader("Access-Control-Allow-Credentials", "false");
 
 	if (req.method === "OPTIONS") {
 		res.sendStatus(204);

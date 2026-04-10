@@ -66,7 +66,6 @@ const HpodReportSchema = new Schema<IHpodReport>(
   { timestamps: true, collection: "hpod_reports" },
 );
 
-export const HpodReport = mongoose.model<IHpodReport>(
-  "HpodReport",
-  HpodReportSchema,
-);
+export const HpodReport =
+  (mongoose.models.HpodReport as mongoose.Model<IHpodReport>) ||
+  mongoose.model<IHpodReport>("HpodReport", HpodReportSchema);

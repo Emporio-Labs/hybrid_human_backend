@@ -17,4 +17,5 @@ const therapySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model("Therapy", therapySchema);
+export default (mongoose.models.Therapy as mongoose.Model<any>) ||
+  mongoose.model("Therapy", therapySchema);

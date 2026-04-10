@@ -12,20 +12,6 @@ const GROQ_BASE_URL = process.env.GROQ_BASE_URL ?? "https://api.groq.com/openai/
 const LLM_PROVIDER = (process.env.LLM_PROVIDER ?? "openai").toLowerCase();
 const MAX_PDF_TEXT_CHARS = Number(process.env.HPOD_MAX_PDF_TEXT_CHARS ?? 60000);
 
-const openaiClient = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const grokClient = new OpenAI({
-  apiKey: process.env.GROK_API_KEY,
-  baseURL: GROK_BASE_URL,
-});
-
-const groqClient = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY ?? process.env.GROK_API_KEY,
-  baseURL: GROQ_BASE_URL,
-});
-
 const hpodSummarySchema = z.object({
   patientName: z
     .union([z.string(), z.null()])
@@ -147,7 +133,10 @@ const getLlmConfig = (): {
     );
     return {
       provider: "groq",
-      client: groqClient,
+      client: new OpenAI({
+        apiKey: groqKey,
+        baseURL: GROQ_BASE_URL,
+      }),
       model: routedGroqModel,
     };
   }
@@ -156,7 +145,10 @@ const getLlmConfig = (): {
     if (hasGroq) {
       return {
         provider: "groq",
-        client: groqClient,
+        client: new OpenAI({
+          apiKey: groqKey,
+          baseURL: GROQ_BASE_URL,
+        }),
         model: GROQ_MODEL,
       };
     }
@@ -167,7 +159,9 @@ const getLlmConfig = (): {
       );
       return {
         provider: "openai",
-        client: openaiClient,
+        client: new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
+        }),
         model: OPENAI_MODEL,
       };
     }
@@ -178,7 +172,10 @@ const getLlmConfig = (): {
       );
       return {
         provider: "grok",
-        client: grokClient,
+        client: new OpenAI({
+          apiKey: grokKey,
+          baseURL: GROK_BASE_URL,
+        }),
         model: GROK_MODEL,
       };
     }
@@ -190,7 +187,10 @@ const getLlmConfig = (): {
     if (hasGrok) {
       return {
         provider: "grok",
-        client: grokClient,
+        client: new OpenAI({
+          apiKey: grokKey,
+          baseURL: GROK_BASE_URL,
+        }),
         model: GROK_MODEL,
       };
     }
@@ -201,7 +201,9 @@ const getLlmConfig = (): {
       );
       return {
         provider: "openai",
-        client: openaiClient,
+        client: new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
+        }),
         model: OPENAI_MODEL,
       };
     }
@@ -212,7 +214,9 @@ const getLlmConfig = (): {
   if (hasOpenAI) {
     return {
       provider: "openai",
-      client: openaiClient,
+      client: new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      }),
       model: OPENAI_MODEL,
     };
   }
@@ -223,7 +227,10 @@ const getLlmConfig = (): {
     );
     return {
       provider: "groq",
-      client: groqClient,
+      client: new OpenAI({
+        apiKey: groqKey,
+        baseURL: GROQ_BASE_URL,
+      }),
       model: GROQ_MODEL,
     };
   }
@@ -234,7 +241,10 @@ const getLlmConfig = (): {
     );
     return {
       provider: "grok",
-      client: grokClient,
+      client: new OpenAI({
+        apiKey: grokKey,
+        baseURL: GROK_BASE_URL,
+      }),
       model: GROK_MODEL,
     };
   }

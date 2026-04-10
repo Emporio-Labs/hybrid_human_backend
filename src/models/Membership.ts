@@ -21,4 +21,5 @@ const membershipSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default mongoose.model("Membership", membershipSchema);
+export default (mongoose.models.Membership as mongoose.Model<any>) ||
+	mongoose.model("Membership", membershipSchema);

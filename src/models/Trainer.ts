@@ -12,4 +12,5 @@ const trainerSchema = new mongoose.Schema(
 	{ timestamps: true },
 );
 
-export default mongoose.model("Trainer", trainerSchema);
+export default (mongoose.models.Trainer as mongoose.Model<any>) ||
+	mongoose.model("Trainer", trainerSchema);

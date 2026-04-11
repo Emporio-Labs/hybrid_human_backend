@@ -5,6 +5,7 @@ import Doctor from "../models/Doctor";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
 import Slot from "../models/Slots";
+import type { AuthenticatedUser } from "../types/auth";
 import {
 	CreditServiceError,
 	consumeCredits,
@@ -27,7 +28,9 @@ const getIdParam = (idParam: string | string[] | undefined): string | null => {
 	return idParam;
 };
 
-const getRequiredAuthenticatedUser = (req: Parameters<RequestHandler>[0]) => {
+const getRequiredAuthenticatedUser = (
+	req: Parameters<RequestHandler>[0] & { user?: AuthenticatedUser },
+) => {
 	if (!req.user) {
 		return null;
 	}
@@ -50,6 +53,10 @@ const isCancelledAppointmentStatus = (status: unknown): boolean =>
 	status === BookingStatus.Cancelled ||
 	status === String(BookingStatus.Cancelled) ||
 	status === "Cancelled";
+
+const nonCancelledAppointmentStatusFilter = {
+	$nin: [BookingStatus.Cancelled, String(BookingStatus.Cancelled), "Cancelled"],
+};
 
 const mapCreditServiceError = (
 	error: CreditServiceError,
@@ -86,8 +93,8 @@ const isSlotLinkedToService = (
 		? slot.parentTemplate.toString()
 		: slot._id.toString();
 
-	return serviceSlotIds.some((serviceSlotId) =>
-		serviceSlotId.toString() === linkedSlotId,
+	return serviceSlotIds.some(
+		(serviceSlotId) => serviceSlotId.toString() === linkedSlotId,
 	);
 };
 
@@ -181,23 +188,23 @@ const reserveSlotCapacity = async (slotId: string) => {
 };
 
 const releaseSlotCapacity = async (slotId: string): Promise<void> => {
-	const slot = await Slot.findById(slotId);
-
-	if (!slot) {
-		return;
-	}
-
-	const capacity = Math.max(1, Number(slot.capacity ?? 1));
-	const remainingCapacity = Math.max(
-		0,
-		Math.min(capacity, Number(slot.remainingCapacity ?? 0) + 1),
+	await Slot.findOneAndUpdate(
+		{
+			_id: slotId,
+			$expr: {
+				$lt: [
+					{ $ifNull: ["$remainingCapacity", 0] },
+					{ $ifNull: ["$capacity", 1] },
+				],
+			},
+		},
+		{
+			$max: { capacity: 1 },
+			$inc: { remainingCapacity: 1 },
+			$set: { isBooked: false },
+		},
+		{ returnDocument: "after" },
 	);
-
-	slot.capacity = capacity;
-	slot.remainingCapacity = remainingCapacity;
-	slot.isBooked = remainingCapacity <= 0;
-
-	await slot.save();
 };
 
 export const createAppointment: RequestHandler = async (req, res, next) => {
@@ -253,8 +260,9 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 		let serviceSlots: Array<mongoose.Types.ObjectId> | undefined;
 
 		if (serviceId) {
-			const service =
-				await Service.findById(serviceId).select("_id creditCost slots");
+			const service = await Service.findById(serviceId).select(
+				"_id creditCost slots",
+			);
 
 			if (!service) {
 				res.status(404).json({ message: "Service not found" });
@@ -274,10 +282,7 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		if (
-			serviceSlots &&
-			!isSlotLinkedToService(serviceSlots, requestedSlot)
-		) {
+		if (serviceSlots && !isSlotLinkedToService(serviceSlots, requestedSlot)) {
 			res.status(409).json({ message: "Slot is full or no longer available" });
 			return;
 		}
@@ -299,13 +304,16 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		reservedSlotId = reservedSlot._id.toString();
+		const concreteReservedSlotId = reservedSlot._id.toString();
+		reservedSlotId = concreteReservedSlotId;
 
 		const appointment = await Appointment.create({
 			appointmentDate,
 			user: userId,
-			slot: reservedSlotId,
+			slot: concreteReservedSlotId,
 			doctor: doctorId,
+			creditCostSnapshot: creditCost,
+			creditsBypassed: bypassCredits,
 			...(serviceId ? { service: serviceId } : {}),
 			...(reportId ? { report: reportId } : {}),
 		});
@@ -474,7 +482,42 @@ export const deleteAppointmentById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const requester = getRequiredAuthenticatedUser(req);
+
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
 	try {
+		const existingAppointment = await Appointment.findById(id);
+
+		if (!existingAppointment) {
+			res.status(404).json({ message: "Appointment not found" });
+			return;
+		}
+
+		if (!isCancelledAppointmentStatus(existingAppointment.status)) {
+			const transitionedAppointment = await Appointment.findOneAndUpdate(
+				{ _id: id, status: nonCancelledAppointmentStatusFilter },
+				{ status: BookingStatus.Cancelled },
+				{ returnDocument: "after", runValidators: true },
+			);
+
+			if (transitionedAppointment) {
+				await releaseSlotCapacity(transitionedAppointment.slot.toString());
+
+				await refundCreditsBySource({
+					userId: transitionedAppointment.user.toString(),
+					sourceType: CreditTransactionSource.Appointment,
+					sourceId: transitionedAppointment._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Appointment ${transitionedAppointment._id.toString()} deleted`,
+				});
+			}
+		}
+
 		const deletedAppointment = await Appointment.findByIdAndDelete(id);
 
 		if (!deletedAppointment) {
@@ -518,50 +561,93 @@ export const changeAppointmentStatus: RequestHandler = async (
 	}
 
 	try {
-		const appointment = await Appointment.findById(id);
-
-		if (!appointment) {
-			res.status(404).json({ message: "Appointment not found" });
-			return;
-		}
+		let requesterDoctorId: string | null = null;
 
 		if (requester.role === "doctor") {
-			const requesterDoctorId = await getDoctorIdForRequester(requester.id);
+			requesterDoctorId = await getDoctorIdForRequester(requester.id);
 
-			if (
-				!requesterDoctorId ||
-				appointment.doctor.toString() !== requesterDoctorId
-			) {
+			if (!requesterDoctorId) {
 				res.status(403).json({ message: "Forbidden" });
 				return;
 			}
 		}
 
-		const wasCancelled = isCancelledAppointmentStatus(appointment.status);
-		appointment.status = parsedBody.data.status;
-		await appointment.save();
+		if (isCancelledAppointmentStatus(parsedBody.data.status)) {
+			const transitionedAppointment = await Appointment.findOneAndUpdate(
+				{
+					_id: id,
+					status: nonCancelledAppointmentStatusFilter,
+					...(requesterDoctorId ? { doctor: requesterDoctorId } : {}),
+				},
+				{ status: BookingStatus.Cancelled },
+				{ returnDocument: "after", runValidators: true },
+			);
 
-		let refundedCredits = 0;
+			if (!transitionedAppointment) {
+				const existingAppointment = await Appointment.findById(id);
 
-		if (!wasCancelled && isCancelledAppointmentStatus(parsedBody.data.status)) {
-			await releaseSlotCapacity(appointment.slot.toString()).catch(() => null);
+				if (!existingAppointment) {
+					res.status(404).json({ message: "Appointment not found" });
+					return;
+				}
+
+				if (
+					requesterDoctorId &&
+					existingAppointment.doctor.toString() !== requesterDoctorId
+				) {
+					res.status(403).json({ message: "Forbidden" });
+					return;
+				}
+
+				res.status(200).json({
+					message: "Appointment status changed",
+					appointment: existingAppointment,
+					credits: { refunded: 0 },
+				});
+				return;
+			}
+
+			await releaseSlotCapacity(transitionedAppointment.slot.toString());
 
 			const refundResult = await refundCreditsBySource({
-				userId: appointment.user.toString(),
+				userId: transitionedAppointment.user.toString(),
 				sourceType: CreditTransactionSource.Appointment,
-				sourceId: appointment._id.toString(),
+				sourceId: transitionedAppointment._id.toString(),
 				actorId: requester.id,
 				actorRole: requester.role,
-				reason: `Appointment ${appointment._id.toString()} cancelled`,
+				reason: `Appointment ${transitionedAppointment._id.toString()} cancelled`,
 			});
 
-			refundedCredits = refundResult.refunded;
+			res.status(200).json({
+				message: "Appointment status changed",
+				appointment: transitionedAppointment,
+				credits: { refunded: refundResult.refunded },
+			});
+			return;
+		}
+
+		const appointment = await Appointment.findOneAndUpdate(
+			{ _id: id, ...(requesterDoctorId ? { doctor: requesterDoctorId } : {}) },
+			{ status: parsedBody.data.status },
+			{ returnDocument: "after", runValidators: true },
+		);
+
+		if (!appointment) {
+			const existingAppointment = await Appointment.findById(id);
+
+			if (!existingAppointment) {
+				res.status(404).json({ message: "Appointment not found" });
+				return;
+			}
+
+			res.status(403).json({ message: "Forbidden" });
+			return;
 		}
 
 		res.status(200).json({
 			message: "Appointment status changed",
 			appointment,
-			credits: { refunded: refundedCredits },
+			credits: { refunded: 0 },
 		});
 	} catch (error) {
 		next(error);

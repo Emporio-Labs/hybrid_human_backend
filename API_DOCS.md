@@ -1192,11 +1192,16 @@ POST /therapies
 {
   "therapyName": "Deep Tissue Massage",
   "therapyTime": 60,
+  "creditCost": 2,
   "description": "Focus on muscle recovery",
   "tags": ["recovery", "massage"],
   "slots": ["507f1f77bcf86cd799439020"]
 }
 ```
+
+**Credit Notes:**
+- `creditCost` is optional and defaults to `1` when omitted.
+- Booking and appointment deduction uses this value when the therapy `_id` is used as `serviceId`.
 
 #### 2. Get All Therapies
 ```
@@ -1220,6 +1225,9 @@ PATCH /therapies/:id
 **Authorization:** Admin only
 
 **Notes:** Any subset of fields from create payload; at least one field required.
+
+**Credit Notes:**
+- `creditCost` can be updated to change future deduction behavior.
 
 #### 5. Delete Therapy
 ```
@@ -1444,6 +1452,10 @@ DELETE /bookings/:id
 
 **Authorization:** Admin only
 
+**Behavior:**
+- If the booking is not already cancelled, delete first applies cancellation compensation: refund consumed credits once and release one slot capacity for the dated inventory slot.
+- If the booking is already cancelled, delete does not apply additional compensation.
+
 ---
 
 #### 7. Change Booking Status
@@ -1462,6 +1474,8 @@ PATCH /bookings/:id/status
 
 **Behavior:**
 - When status transitions to `Cancelled`, credits previously consumed for that booking are refunded once.
+- When status transitions to `Cancelled`, one slot capacity is released back to the same dated slot inventory record.
+- Cancellation compensation is idempotent for repeated cancel requests. Subsequent cancel requests return `refunded: 0`.
 
 **Response (200 OK) Example:**
 ```json
@@ -1613,6 +1627,10 @@ DELETE /appointments/:id
 
 **Authorization:** Admin only
 
+**Behavior:**
+- If the appointment is not already cancelled, delete first applies cancellation compensation: refund consumed credits once and release one slot capacity for the dated inventory slot.
+- If the appointment is already cancelled, delete does not apply additional compensation.
+
 ---
 
 #### 7. Change Appointment Status
@@ -1632,6 +1650,7 @@ PATCH /appointments/:id/status
 **Behavior:**
 - When status transitions to `Cancelled`, credits previously consumed for that appointment are refunded once.
 - When status transitions to `Cancelled`, one slot capacity is released back to the same dated slot inventory record.
+- Cancellation compensation is idempotent for repeated cancel requests. Subsequent cancel requests return `refunded: 0`.
 
 **Response (200 OK) Example:**
 ```json

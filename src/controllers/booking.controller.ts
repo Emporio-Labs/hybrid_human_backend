@@ -39,6 +39,10 @@ const isCancelledBookingStatus = (status: unknown): boolean =>
 	status === String(BookingStatus.Cancelled) ||
 	status === "Cancelled";
 
+const nonCancelledBookingStatusFilter = {
+	$nin: [BookingStatus.Cancelled, String(BookingStatus.Cancelled), "Cancelled"],
+};
+
 const mapCreditServiceError = (
 	error: CreditServiceError,
 ): { status: number; message: string } => {
@@ -74,8 +78,8 @@ const isSlotLinkedToService = (
 		? slot.parentTemplate.toString()
 		: slot._id.toString();
 
-	return serviceSlotIds.some((serviceSlotId) =>
-		serviceSlotId.toString() === linkedSlotId,
+	return serviceSlotIds.some(
+		(serviceSlotId) => serviceSlotId.toString() === linkedSlotId,
 	);
 };
 
@@ -169,23 +173,23 @@ const reserveSlotCapacity = async (slotId: string) => {
 };
 
 const releaseSlotCapacity = async (slotId: string): Promise<void> => {
-	const slot = await Slot.findById(slotId);
-
-	if (!slot) {
-		return;
-	}
-
-	const capacity = Math.max(1, Number(slot.capacity ?? 1));
-	const remainingCapacity = Math.max(
-		0,
-		Math.min(capacity, Number(slot.remainingCapacity ?? 0) + 1),
+	await Slot.findOneAndUpdate(
+		{
+			_id: slotId,
+			$expr: {
+				$lt: [
+					{ $ifNull: ["$remainingCapacity", 0] },
+					{ $ifNull: ["$capacity", 1] },
+				],
+			},
+		},
+		{
+			$max: { capacity: 1 },
+			$inc: { remainingCapacity: 1 },
+			$set: { isBooked: false },
+		},
+		{ returnDocument: "after" },
 	);
-
-	slot.capacity = capacity;
-	slot.remainingCapacity = remainingCapacity;
-	slot.isBooked = remainingCapacity <= 0;
-
-	await slot.save();
 };
 
 export const createBooking: RequestHandler = async (req, res, next) => {
@@ -248,7 +252,10 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
 		);
 
-		if (!requestedSlot || !isSlotLinkedToService(service.slots, requestedSlot)) {
+		if (
+			!requestedSlot ||
+			!isSlotLinkedToService(service.slots, requestedSlot)
+		) {
 			res.status(409).json({ message: "Slot is full or no longer available" });
 			return;
 		}
@@ -270,15 +277,18 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			return;
 		}
 
-		reservedSlotId = reservedSlot._id.toString();
+		const concreteReservedSlotId = reservedSlot._id.toString();
+		reservedSlotId = concreteReservedSlotId;
 
 		const creditCost = Math.max(1, Number(service.creditCost ?? 1));
 
 		const booking = await Booking.create({
 			bookingDate,
 			user: targetUserId,
-			slot: reservedSlotId,
+			slot: concreteReservedSlotId,
 			service: serviceId,
+			creditCostSnapshot: creditCost,
+			creditsBypassed: bypassCredits,
 			...(reportId ? { report: reportId } : {}),
 		});
 
@@ -445,7 +455,42 @@ export const deleteBookingById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const requester = getRequiredAuthenticatedUser(req);
+
+	if (!requester) {
+		res.status(401).json({ message: "Unauthorized" });
+		return;
+	}
+
 	try {
+		const existingBooking = await Booking.findById(id);
+
+		if (!existingBooking) {
+			res.status(404).json({ message: "Booking not found" });
+			return;
+		}
+
+		if (!isCancelledBookingStatus(existingBooking.status)) {
+			const transitionedBooking = await Booking.findOneAndUpdate(
+				{ _id: id, status: nonCancelledBookingStatusFilter },
+				{ status: BookingStatus.Cancelled },
+				{ returnDocument: "after", runValidators: true },
+			);
+
+			if (transitionedBooking) {
+				await releaseSlotCapacity(transitionedBooking.slot.toString());
+
+				await refundCreditsBySource({
+					userId: transitionedBooking.user.toString(),
+					sourceType: CreditTransactionSource.Booking,
+					sourceId: transitionedBooking._id.toString(),
+					actorId: requester.id,
+					actorRole: requester.role,
+					reason: `Booking ${transitionedBooking._id.toString()} deleted`,
+				});
+			}
+		}
+
 		const deletedBooking = await Booking.findByIdAndDelete(id);
 
 		if (!deletedBooking) {
@@ -485,38 +530,63 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const booking = await Booking.findById(id);
+		if (isCancelledBookingStatus(parsedBody.data.status)) {
+			const transitionedBooking = await Booking.findOneAndUpdate(
+				{ _id: id, status: nonCancelledBookingStatusFilter },
+				{ status: BookingStatus.Cancelled },
+				{ returnDocument: "after", runValidators: true },
+			);
+
+			if (!transitionedBooking) {
+				const existingBooking = await Booking.findById(id);
+
+				if (!existingBooking) {
+					res.status(404).json({ message: "Booking not found" });
+					return;
+				}
+
+				res.status(200).json({
+					message: "Booking status changed",
+					booking: existingBooking,
+					credits: { refunded: 0 },
+				});
+				return;
+			}
+
+			await releaseSlotCapacity(transitionedBooking.slot.toString());
+
+			const refundResult = await refundCreditsBySource({
+				userId: transitionedBooking.user.toString(),
+				sourceType: CreditTransactionSource.Booking,
+				sourceId: transitionedBooking._id.toString(),
+				actorId: requester.id,
+				actorRole: requester.role,
+				reason: `Booking ${transitionedBooking._id.toString()} cancelled`,
+			});
+
+			res.status(200).json({
+				message: "Booking status changed",
+				booking: transitionedBooking,
+				credits: { refunded: refundResult.refunded },
+			});
+			return;
+		}
+
+		const booking = await Booking.findByIdAndUpdate(
+			id,
+			{ status: parsedBody.data.status },
+			{ returnDocument: "after", runValidators: true },
+		);
 
 		if (!booking) {
 			res.status(404).json({ message: "Booking not found" });
 			return;
 		}
 
-		const wasCancelled = isCancelledBookingStatus(booking.status);
-		booking.status = parsedBody.data.status;
-		await booking.save();
-
-		let refundedCredits = 0;
-
-		if (!wasCancelled && isCancelledBookingStatus(parsedBody.data.status)) {
-			await releaseSlotCapacity(booking.slot.toString()).catch(() => null);
-
-			const refundResult = await refundCreditsBySource({
-				userId: booking.user.toString(),
-				sourceType: CreditTransactionSource.Booking,
-				sourceId: booking._id.toString(),
-				actorId: requester.id,
-				actorRole: requester.role,
-				reason: `Booking ${booking._id.toString()} cancelled`,
-			});
-
-			refundedCredits = refundResult.refunded;
-		}
-
 		res.status(200).json({
 			message: "Booking status changed",
 			booking,
-			credits: { refunded: refundedCredits },
+			credits: { refunded: 0 },
 		});
 	} catch (error) {
 		next(error);

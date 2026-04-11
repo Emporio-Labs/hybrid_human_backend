@@ -28,6 +28,17 @@ const appointmentSchema = new mongoose.Schema(
 			default: null,
 			required: false,
 		},
+		creditCostSnapshot: {
+			type: Number,
+			min: 1,
+			default: 1,
+			required: true,
+		},
+		creditsBypassed: {
+			type: Boolean,
+			default: false,
+			required: true,
+		},
 	},
 	{ timestamps: true },
 );

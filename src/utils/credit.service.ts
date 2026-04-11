@@ -402,9 +402,32 @@ export const addCreditsToMembership = async (
 				.sort({ endDate: 1, createdAt: 1 });
 
 	if (!targetMembership) {
+		if (explicitMembershipId) {
+			throw new CreditServiceError(
+				"NO_ACTIVE_MEMBERSHIP",
+				"Provided membershipId was not found for the target user",
+			);
+		}
+
+		const upcomingMembership = await Membership.findOne({
+			user: userObjectId,
+			status: MembershipStatus.Active,
+			startDate: { $gt: now },
+		})
+			.select("startDate")
+			.sort({ startDate: 1, createdAt: 1 })
+			.lean();
+
+		if (upcomingMembership?.startDate) {
+			throw new CreditServiceError(
+				"NO_ACTIVE_MEMBERSHIP",
+				`User has no active membership yet. Next membership starts at ${new Date(upcomingMembership.startDate).toISOString()}`,
+			);
+		}
+
 		throw new CreditServiceError(
 			"NO_ACTIVE_MEMBERSHIP",
-			"No eligible membership found for top-up",
+			"User has no active membership in the current date window (status Active, startDate <= now, and endDate is missing or >= now)",
 		);
 	}
 

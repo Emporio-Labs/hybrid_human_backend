@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import Booking from "../models/Bookings";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
+import Slot from "../models/Slots";
 import {
 	CreditServiceError,
 	consumeCredits,
@@ -54,6 +55,139 @@ const mapCreditServiceError = (
 	}
 };
 
+const normalizeToUtcDate = (value: Date): Date =>
+	new Date(
+		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+	);
+
+const isSameUtcDate = (left: Date, right: Date): boolean =>
+	normalizeToUtcDate(left).getTime() === normalizeToUtcDate(right).getTime();
+
+const isSlotLinkedToService = (
+	serviceSlotIds: Array<mongoose.Types.ObjectId>,
+	slot: {
+		_id: mongoose.Types.ObjectId;
+		parentTemplate?: mongoose.Types.ObjectId | null;
+	},
+): boolean => {
+	const linkedSlotId = slot.parentTemplate
+		? slot.parentTemplate.toString()
+		: slot._id.toString();
+
+	return serviceSlotIds.some((serviceSlotId) =>
+		serviceSlotId.toString() === linkedSlotId,
+	);
+};
+
+const resolveConcreteSlotForBooking = async (
+	slot: {
+		_id: mongoose.Types.ObjectId;
+		date?: Date | null;
+		isDaily?: boolean;
+		startTime: string;
+		endTime: string;
+		capacity?: number;
+		parentTemplate?: mongoose.Types.ObjectId | null;
+	},
+	bookingDate: Date,
+) => {
+	const bookingDay = normalizeToUtcDate(bookingDate);
+
+	if (slot.parentTemplate) {
+		if (!slot.date || !isSameUtcDate(slot.date, bookingDay)) {
+			return null;
+		}
+
+		return slot;
+	}
+
+	if (slot.isDaily) {
+		const templateCapacity = Math.max(1, Number(slot.capacity ?? 1));
+
+		const concreteSlot = await Slot.findOneAndUpdate(
+			{
+				parentTemplate: slot._id,
+				date: bookingDay,
+				startTime: slot.startTime,
+				endTime: slot.endTime,
+			},
+			{
+				$setOnInsert: {
+					date: bookingDay,
+					isDaily: false,
+					startTime: slot.startTime,
+					endTime: slot.endTime,
+					capacity: templateCapacity,
+					remainingCapacity: templateCapacity,
+					isBooked: templateCapacity <= 0,
+					parentTemplate: slot._id,
+				},
+			},
+			{
+				upsert: true,
+				setDefaultsOnInsert: true,
+				returnDocument: "after",
+			},
+		);
+
+		return concreteSlot;
+	}
+
+	if (!slot.date || !isSameUtcDate(slot.date, bookingDay)) {
+		return null;
+	}
+
+	return slot;
+};
+
+const reserveSlotCapacity = async (slotId: string) => {
+	let reservedSlot = await Slot.findOneAndUpdate(
+		{ _id: slotId, remainingCapacity: { $gt: 0 } },
+		{ $inc: { remainingCapacity: -1 } },
+		{ returnDocument: "after" },
+	);
+
+	if (!reservedSlot) {
+		return null;
+	}
+
+	const derivedBooked = Number(reservedSlot.remainingCapacity ?? 0) <= 0;
+
+	if (reservedSlot.isBooked !== derivedBooked) {
+		const syncedSlot = await Slot.findByIdAndUpdate(
+			slotId,
+			{ isBooked: derivedBooked },
+			{ returnDocument: "after" },
+		);
+
+		if (syncedSlot) {
+			reservedSlot = syncedSlot;
+		}
+	}
+
+	return reservedSlot;
+};
+
+const releaseSlotCapacity = async (slotId: string): Promise<void> => {
+	const slot = await Slot.findById(slotId);
+
+	if (!slot) {
+		return;
+	}
+
+	const capacity = Math.max(1, Number(slot.capacity ?? 1));
+	const remainingCapacity = Math.max(
+		0,
+		Math.min(capacity, Number(slot.remainingCapacity ?? 0) + 1),
+	);
+
+	slot.capacity = capacity;
+	slot.remainingCapacity = remainingCapacity;
+	slot.isBooked = remainingCapacity <= 0;
+
+	await slot.save();
+};
+
 export const createBooking: RequestHandler = async (req, res, next) => {
 	const parsedBody = createBookingBodySchema.safeParse(req.body);
 
@@ -98,20 +232,52 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	let reservedSlotId: string | null = null;
+
 	try {
-		const service = await Service.findById(serviceId).select("_id creditCost");
+		const service = await Service.findById(serviceId).select(
+			"_id creditCost slots",
+		);
 
 		if (!service) {
 			res.status(404).json({ message: "Service not found" });
 			return;
 		}
 
+		const requestedSlot = await Slot.findById(slotId).select(
+			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+		);
+
+		if (!requestedSlot || !isSlotLinkedToService(service.slots, requestedSlot)) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		const concreteSlot = await resolveConcreteSlotForBooking(
+			requestedSlot,
+			bookingDate,
+		);
+
+		if (!concreteSlot) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		const reservedSlot = await reserveSlotCapacity(concreteSlot._id.toString());
+
+		if (!reservedSlot) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		reservedSlotId = reservedSlot._id.toString();
+
 		const creditCost = Math.max(1, Number(service.creditCost ?? 1));
 
 		const booking = await Booking.create({
 			bookingDate,
 			user: targetUserId,
-			slot: slotId,
+			slot: reservedSlotId,
 			service: serviceId,
 			...(reportId ? { report: reportId } : {}),
 		});
@@ -129,6 +295,11 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 				});
 			} catch (error) {
 				await Booking.findByIdAndDelete(booking._id).catch(() => null);
+
+				if (reservedSlotId) {
+					await releaseSlotCapacity(reservedSlotId).catch(() => null);
+					reservedSlotId = null;
+				}
 
 				if (error instanceof CreditServiceError) {
 					const creditError = mapCreditServiceError(error);
@@ -149,6 +320,10 @@ export const createBooking: RequestHandler = async (req, res, next) => {
 			},
 		});
 	} catch (error) {
+		if (reservedSlotId) {
+			await releaseSlotCapacity(reservedSlotId).catch(() => null);
+		}
+
 		next(error);
 	}
 };
@@ -324,6 +499,8 @@ export const changeBookingStatus: RequestHandler = async (req, res, next) => {
 		let refundedCredits = 0;
 
 		if (!wasCancelled && isCancelledBookingStatus(parsedBody.data.status)) {
+			await releaseSlotCapacity(booking.slot.toString()).catch(() => null);
+
 			const refundResult = await refundCreditsBySource({
 				userId: booking.user.toString(),
 				sourceType: CreditTransactionSource.Booking,

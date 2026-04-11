@@ -4,6 +4,7 @@ import Appointment from "../models/Appointment";
 import Doctor from "../models/Doctor";
 import { BookingStatus, CreditTransactionSource } from "../models/Enums";
 import Service from "../models/Service";
+import Slot from "../models/Slots";
 import {
 	CreditServiceError,
 	consumeCredits,
@@ -66,6 +67,139 @@ const mapCreditServiceError = (
 	}
 };
 
+const normalizeToUtcDate = (value: Date): Date =>
+	new Date(
+		Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+	);
+
+const isSameUtcDate = (left: Date, right: Date): boolean =>
+	normalizeToUtcDate(left).getTime() === normalizeToUtcDate(right).getTime();
+
+const isSlotLinkedToService = (
+	serviceSlotIds: Array<mongoose.Types.ObjectId>,
+	slot: {
+		_id: mongoose.Types.ObjectId;
+		parentTemplate?: mongoose.Types.ObjectId | null;
+	},
+): boolean => {
+	const linkedSlotId = slot.parentTemplate
+		? slot.parentTemplate.toString()
+		: slot._id.toString();
+
+	return serviceSlotIds.some((serviceSlotId) =>
+		serviceSlotId.toString() === linkedSlotId,
+	);
+};
+
+const resolveConcreteSlotForAppointment = async (
+	slot: {
+		_id: mongoose.Types.ObjectId;
+		date?: Date | null;
+		isDaily?: boolean;
+		startTime: string;
+		endTime: string;
+		capacity?: number;
+		parentTemplate?: mongoose.Types.ObjectId | null;
+	},
+	appointmentDate: Date,
+) => {
+	const appointmentDay = normalizeToUtcDate(appointmentDate);
+
+	if (slot.parentTemplate) {
+		if (!slot.date || !isSameUtcDate(slot.date, appointmentDay)) {
+			return null;
+		}
+
+		return slot;
+	}
+
+	if (slot.isDaily) {
+		const templateCapacity = Math.max(1, Number(slot.capacity ?? 1));
+
+		const concreteSlot = await Slot.findOneAndUpdate(
+			{
+				parentTemplate: slot._id,
+				date: appointmentDay,
+				startTime: slot.startTime,
+				endTime: slot.endTime,
+			},
+			{
+				$setOnInsert: {
+					date: appointmentDay,
+					isDaily: false,
+					startTime: slot.startTime,
+					endTime: slot.endTime,
+					capacity: templateCapacity,
+					remainingCapacity: templateCapacity,
+					isBooked: templateCapacity <= 0,
+					parentTemplate: slot._id,
+				},
+			},
+			{
+				upsert: true,
+				setDefaultsOnInsert: true,
+				returnDocument: "after",
+			},
+		);
+
+		return concreteSlot;
+	}
+
+	if (!slot.date || !isSameUtcDate(slot.date, appointmentDay)) {
+		return null;
+	}
+
+	return slot;
+};
+
+const reserveSlotCapacity = async (slotId: string) => {
+	let reservedSlot = await Slot.findOneAndUpdate(
+		{ _id: slotId, remainingCapacity: { $gt: 0 } },
+		{ $inc: { remainingCapacity: -1 } },
+		{ returnDocument: "after" },
+	);
+
+	if (!reservedSlot) {
+		return null;
+	}
+
+	const derivedBooked = Number(reservedSlot.remainingCapacity ?? 0) <= 0;
+
+	if (reservedSlot.isBooked !== derivedBooked) {
+		const syncedSlot = await Slot.findByIdAndUpdate(
+			slotId,
+			{ isBooked: derivedBooked },
+			{ returnDocument: "after" },
+		);
+
+		if (syncedSlot) {
+			reservedSlot = syncedSlot;
+		}
+	}
+
+	return reservedSlot;
+};
+
+const releaseSlotCapacity = async (slotId: string): Promise<void> => {
+	const slot = await Slot.findById(slotId);
+
+	if (!slot) {
+		return;
+	}
+
+	const capacity = Math.max(1, Number(slot.capacity ?? 1));
+	const remainingCapacity = Math.max(
+		0,
+		Math.min(capacity, Number(slot.remainingCapacity ?? 0) + 1),
+	);
+
+	slot.capacity = capacity;
+	slot.remainingCapacity = remainingCapacity;
+	slot.isBooked = remainingCapacity <= 0;
+
+	await slot.save();
+};
+
 export const createAppointment: RequestHandler = async (req, res, next) => {
 	const parsedBody = createAppointmentBodySchema.safeParse(req.body);
 
@@ -112,12 +246,15 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	let reservedSlotId: string | null = null;
+
 	try {
 		let creditCost = 1;
+		let serviceSlots: Array<mongoose.Types.ObjectId> | undefined;
 
 		if (serviceId) {
 			const service =
-				await Service.findById(serviceId).select("_id creditCost");
+				await Service.findById(serviceId).select("_id creditCost slots");
 
 			if (!service) {
 				res.status(404).json({ message: "Service not found" });
@@ -125,12 +262,49 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 			}
 
 			creditCost = Math.max(1, Number(service.creditCost ?? 1));
+			serviceSlots = service.slots;
 		}
+
+		const requestedSlot = await Slot.findById(slotId).select(
+			"_id date isDaily startTime endTime capacity remainingCapacity isBooked parentTemplate",
+		);
+
+		if (!requestedSlot) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		if (
+			serviceSlots &&
+			!isSlotLinkedToService(serviceSlots, requestedSlot)
+		) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		const concreteSlot = await resolveConcreteSlotForAppointment(
+			requestedSlot,
+			appointmentDate,
+		);
+
+		if (!concreteSlot) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		const reservedSlot = await reserveSlotCapacity(concreteSlot._id.toString());
+
+		if (!reservedSlot) {
+			res.status(409).json({ message: "Slot is full or no longer available" });
+			return;
+		}
+
+		reservedSlotId = reservedSlot._id.toString();
 
 		const appointment = await Appointment.create({
 			appointmentDate,
 			user: userId,
-			slot: slotId,
+			slot: reservedSlotId,
 			doctor: doctorId,
 			...(serviceId ? { service: serviceId } : {}),
 			...(reportId ? { report: reportId } : {}),
@@ -149,6 +323,11 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 				});
 			} catch (error) {
 				await Appointment.findByIdAndDelete(appointment._id).catch(() => null);
+
+				if (reservedSlotId) {
+					await releaseSlotCapacity(reservedSlotId).catch(() => null);
+					reservedSlotId = null;
+				}
 
 				if (error instanceof CreditServiceError) {
 					const creditError = mapCreditServiceError(error);
@@ -169,6 +348,10 @@ export const createAppointment: RequestHandler = async (req, res, next) => {
 			},
 		});
 	} catch (error) {
+		if (reservedSlotId) {
+			await releaseSlotCapacity(reservedSlotId).catch(() => null);
+		}
+
 		next(error);
 	}
 };
@@ -361,6 +544,8 @@ export const changeAppointmentStatus: RequestHandler = async (
 		let refundedCredits = 0;
 
 		if (!wasCancelled && isCancelledAppointmentStatus(parsedBody.data.status)) {
+			await releaseSlotCapacity(appointment.slot.toString()).catch(() => null);
+
 			const refundResult = await refundCreditsBySource({
 				userId: appointment.user.toString(),
 				sourceType: CreditTransactionSource.Appointment,

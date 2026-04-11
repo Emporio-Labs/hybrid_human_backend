@@ -1,7 +1,21 @@
 import mongoose from "mongoose";
 
+export const ServiceType = {
+	Service: "Service",
+	Therapy: "Therapy",
+} as const;
+
+export type ServiceTypeValue = (typeof ServiceType)[keyof typeof ServiceType];
+
 const serviceSchema = new mongoose.Schema(
 	{
+		serviceType: {
+			type: String,
+			enum: Object.values(ServiceType),
+			default: ServiceType.Service,
+			required: true,
+			index: true,
+		},
 		serviceName: { type: String, required: true },
 		serviceTime: { type: Number, required: true },
 		creditCost: { type: Number, required: true, min: 1, default: 1 },

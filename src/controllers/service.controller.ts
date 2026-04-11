@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import mongoose from "mongoose";
-import Service from "../models/Service";
+import Service, { ServiceType } from "../models/Service";
 import {
 	createServiceBodySchema,
 	updateServiceBodySchema,
@@ -37,7 +37,10 @@ export const createService: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const service = await Service.create(parsedBody.data);
+		const service = await Service.create({
+			...parsedBody.data,
+			serviceType: ServiceType.Service,
+		});
 		res.status(201).json({ message: "Service created", service });
 	} catch (error) {
 		next(error);
@@ -46,7 +49,7 @@ export const createService: RequestHandler = async (req, res, next) => {
 
 export const getAllServices: RequestHandler = async (_req, res, next) => {
 	try {
-		const services = await Service.find();
+		const services = await Service.find({ serviceType: ServiceType.Service });
 		res.status(200).json({ services });
 	} catch (error) {
 		next(error);
@@ -62,7 +65,10 @@ export const getServiceById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const service = await Service.findById(id);
+		const service = await Service.findOne({
+			_id: id,
+			serviceType: ServiceType.Service,
+		});
 
 		if (!service) {
 			res.status(404).json({ message: "Service not found" });
@@ -99,8 +105,8 @@ export const updateServiceById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const updatedService = await Service.findByIdAndUpdate(
-			id,
+		const updatedService = await Service.findOneAndUpdate(
+			{ _id: id, serviceType: ServiceType.Service },
 			parsedBody.data,
 			{
 				returnDocument: "after",
@@ -128,7 +134,10 @@ export const deleteServiceById: RequestHandler = async (req, res, next) => {
 	}
 
 	try {
-		const deletedService = await Service.findByIdAndDelete(id);
+		const deletedService = await Service.findOneAndDelete({
+			_id: id,
+			serviceType: ServiceType.Service,
+		});
 
 		if (!deletedService) {
 			res.status(404).json({ message: "Service not found" });

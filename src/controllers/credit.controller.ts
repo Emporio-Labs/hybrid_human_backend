@@ -148,6 +148,16 @@ export const topUpUserCreditsById: RequestHandler = async (req, res, next) => {
 		return;
 	}
 
+	const topUpContext = {
+		userId,
+		membershipId: parsedBody.data.membershipId ?? null,
+		amount: parsedBody.data.amount,
+		actorId: req.user.id,
+		actorRole: req.user.role,
+	};
+
+	console.info("[CREDITS_TOPUP_ATTEMPT]", topUpContext);
+
 	try {
 		const result = await addCreditsToMembership({
 			userId,
@@ -157,11 +167,31 @@ export const topUpUserCreditsById: RequestHandler = async (req, res, next) => {
 			actorId: req.user.id,
 			actorRole: req.user.role,
 		});
+		console.info("[CREDITS_TOPUP_SUCCESS]", {
+			...topUpContext,
+			appliedMembershipId: result.membershipId,
+			creditsRemaining: result.creditsRemaining,
+		});
 		res.status(200).json({ message: "Credits topped up", ...result });
 	} catch (error) {
 		if (error instanceof CreditServiceError) {
+			console.warn("[CREDITS_TOPUP_FAILED]", {
+				...topUpContext,
+				errorCode: error.code,
+				errorMessage: error.message,
+			});
+
 			const creditError = mapCreditServiceError(error);
-			res.status(creditError.status).json({ message: creditError.message });
+			res.status(creditError.status).json({
+				message: creditError.message,
+				code: error.code,
+				details: {
+					...topUpContext,
+					hint: parsedBody.data.membershipId
+						? "Ensure membershipId belongs to the target user"
+						: "Provide membershipId or ensure user has an active membership in the current date window",
+				},
+			});
 			return;
 		}
 

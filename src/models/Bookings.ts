@@ -20,7 +20,8 @@ const bookingSchema = new mongoose.Schema(
     report: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Report",
-      default: "",
+      default: null,
+      required: false,
     },
   },
   { timestamps: true }

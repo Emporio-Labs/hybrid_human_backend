@@ -33,7 +33,10 @@ app.use((req, res, next) => {
 		"Access-Control-Allow-Methods",
 		"GET,POST,PUT,PATCH,DELETE,OPTIONS",
 	);
-	res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+	res.setHeader(
+		"Access-Control-Allow-Headers",
+		"Content-Type, Authorization, X-Captcha-Token",
+	);
 	res.setHeader("Access-Control-Allow-Credentials", "false");
 
 	if (req.method === "OPTIONS") {

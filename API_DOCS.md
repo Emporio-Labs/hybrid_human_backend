@@ -67,18 +67,18 @@ The system supports 4 role types:
 | `/users` | Member management | ✅ Admin + Doctor (read), Admin/User self (updates), User self-service profile/report/password | 10 endpoints |
 | `/doctors` | Doctor management | ✅ Admin + Role-based | 5 endpoints |
 | `/trainers` | Trainer management | ✅ Admin + Role-based | 5 endpoints |
-| `/slots` | Time slot management | ✅ Admin only | 5 endpoints |
+| `/slots` | Time slot management | ✅ Public read, Admin write | 5 endpoints |
 | `/memberships` | Membership plans per user | ✅ Mixed roles | 6 endpoints |
 | `/services` | Catalog of services | ✅ Mixed roles | 5 endpoints |
 | `/therapies` | Catalog of therapies | ✅ Mixed roles | 5 endpoints |
-| `/leads` | Lead intake and conversion | ✅ Mixed roles | 6 endpoints |
+| `/leads` | Lead intake and conversion | ✅ Mixed roles + 1 public capture endpoint | 7 endpoints |
 | `/bookings` | Service bookings | ✅ Mixed roles | 7 endpoints |
 | `/appointments` | Doctor appointments | ✅ Mixed roles | 7 endpoints |
 | `/credits` | Credit balance, history, top-up | ✅ Admin + User (self-service for user) | 5 endpoints |
 | `/schedules` | User schedules/todos | ✅ All authenticated | 6 endpoints |
 | `/health` | Health check | ❌ No | 1 endpoint |
 
-**Total Endpoints:** 80
+**Total Endpoints:** 81
 
 ---
 
@@ -876,13 +876,15 @@ DELETE /trainers/:id
 ### Base Path: `/slots`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
-- ✅ Admin role required for all endpoints
+- ✅ Public read access for `GET /slots` and `GET /slots/:id`
+- ✅ Basic Authentication + Admin role required for `POST`, `PATCH`, and `DELETE`
 
 #### 1. Create Slot
 ```
 POST /slots
 ```
+
+**Authorization:** Admin only
 
 **Request Body:**
 ```json
@@ -927,6 +929,8 @@ POST /slots
 GET /slots
 ```
 
+**Authorization:** Public
+
 **Response (200 OK):**
 ```json
 {
@@ -941,12 +945,16 @@ GET /slots
 GET /slots/:id
 ```
 
+**Authorization:** Public
+
 ---
 
 #### 4. Update Slot
 ```
 PATCH /slots/:id
 ```
+
+**Authorization:** Admin only
 
 **Request Body (all fields optional):**
 ```json
@@ -970,6 +978,8 @@ PATCH /slots/:id
 ```
 DELETE /slots/:id
 ```
+
+**Authorization:** Admin only
 
 ---
 
@@ -1243,11 +1253,107 @@ DELETE /therapies/:id
 ### Base Path: `/leads`
 
 **Global Requirements:**
-- ✅ Basic Authentication required
+- ✅ `POST /leads/public-capture` is public (no auth)
+- ✅ All other lead endpoints require Basic Authentication
 - ✅ Admin can list/delete/convert; Admin/Doctor/Trainer can create/read/update
 - **Lead Status Values:** `New`, `Contacted`, `Qualified`, `Warm`, `Hot`, `Cold`, `Converted`, `Lost`
 
-#### 1. Create Lead
+#### 1. Public Lead Capture
+```
+POST /leads/public-capture
+```
+
+**Authentication:** ❌ None  
+**Authorization:** N/A
+
+**Request Body A (fitflix.in health score form):**
+```json
+{
+  "formType": "healthscore",
+  "personalDetails": {
+    "fullName": "Arjun Sharma",
+    "phoneNumber": "+91 98765 43210",
+    "emailAddress": "arjun@email.com",
+    "age": 32,
+    "gender": "Male",
+    "city": "Hyderabad",
+    "primaryHealthGoal": "Longevity & Disease Prevention",
+    "fitnessLevel": "Intermediate (6mo - 2yrs)",
+    "wellnessInterests": ["Yoga & Mindfulness", "Sleep Optimisation"],
+    "notes": "Mild lower-back stiffness"
+  },
+  "assessment": {
+    "version": "v1_quick_vitality_check",
+    "answers": {
+      "v1_q1": 3,
+      "v1_q2": 3,
+      "v1_q3": 2,
+      "v1_q4": 3,
+      "v1_q5": 2,
+      "v1_q6": 3,
+      "v1_q7": 2
+    }
+  },
+  "source": "fitflix.in",
+  "tags": ["website", "campaign-april"],
+  "followUpDate": "2026-04-15T00:00:00Z",
+  "captchaToken": "<token-from-client-captcha>",
+  "website": ""
+}
+```
+
+**Request Body B (plain callback form):**
+```json
+{
+  "formType": "callback",
+  "name": "Arjun Sharma",
+  "phone": "+91 98765 43210",
+  "email": "arjun@email.com",
+  "interests": ["Nutrition & Diet", "Sleep Optimisation"],
+  "source": "fitflix.in",
+  "tags": ["website", "call-me"],
+  "captchaToken": "<token-from-client-captcha>",
+  "website": ""
+}
+```
+
+**Compatibility Notes:**
+- Plain callback supports `name`, `phone`, `email`, and `interests` array.
+- `intrests` is also accepted as a compatibility alias for `interests`.
+- Legacy shape with top-level `leadName` + `email` is still accepted.
+- `assessment.version` supports `v1_quick_vitality_check` and `v2_deep_longevity_assessment`.
+- `assessment.answers` must include all required question IDs for the selected version, with score values from `1` to `4`.
+
+**Security Behavior:**
+- IP-based rate limit is applied.
+- Captcha verification runs when `LEAD_CAPTCHA_SECRET` is configured.
+- If `LEAD_CAPTCHA_REQUIRED=true`, requests are rejected unless captcha validation passes.
+- `website` is a honeypot field. If non-empty, the API returns `202` but ignores the payload.
+- Health score and brand tier are computed automatically when `assessment` is provided.
+
+**Response (202 Accepted):**
+```json
+{
+  "message": "Lead captured",
+  "leadId": "507f1f77bcf86cd799439011",
+  "healthScore": {
+    "overallScore": 64,
+    "categoryScores": {
+      "Movement": 75,
+      "Nutrition": 75,
+      "Sleep": 50,
+      "Mental Wellness": 75,
+      "Hydration": 50,
+      "Recovery": 75,
+      "Energy": 50
+    },
+    "brand": "SHA Wellness Clinic",
+    "tier": "Medical Nutrition & Longevity Science"
+  }
+}
+```
+
+#### 2. Create Lead
 ```
 POST /leads
 ```
@@ -1269,21 +1375,21 @@ POST /leads
 }
 ```
 
-#### 2. Get All Leads
+#### 3. Get All Leads
 ```
 GET /leads
 ```
 
 **Authorization:** Admin only
 
-#### 3. Get Lead by ID
+#### 4. Get Lead by ID
 ```
 GET /leads/:id
 ```
 
 **Authorization:** Admin, Doctor, Trainer
 
-#### 4. Update Lead
+#### 5. Update Lead
 ```
 PATCH /leads/:id
 ```
@@ -1293,14 +1399,14 @@ PATCH /leads/:id
 **Notes:** Any subset of fields from create payload; at least one field required.
 **Field Notes:** `followUpDate` accepts ISO 8601 date-time strings.
 
-#### 5. Delete Lead
+#### 6. Delete Lead
 ```
 DELETE /leads/:id
 ```
 
 **Authorization:** Admin only
 
-#### 6. Convert Lead to User
+#### 7. Convert Lead to User
 ```
 POST /leads/:id/convert
 ```

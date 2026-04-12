@@ -1,28 +1,38 @@
 import { Router } from "express";
 import {
-  convertLeadToUser,
-  createLead,
-  deleteLeadById,
-  getAllLeads,
-  getLeadById,
-  updateLeadById,
+	convertLeadToUser,
+	createLead,
+	createPublicLead,
+	deleteLeadById,
+	getAllLeads,
+	getLeadById,
+	updateLeadById,
 } from "../controllers/lead.controller";
 import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
+import { verifyLeadCaptcha } from "../middleware/captcha.middleware";
+import { publicLeadCaptureRateLimit } from "../middleware/public-rate-limit.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
 const leadRouter = Router();
+
+leadRouter.post(
+	"/public-capture",
+	publicLeadCaptureRateLimit,
+	verifyLeadCaptcha,
+	createPublicLead,
+);
 
 leadRouter.use(authenticateBasicCredentials);
 
 leadRouter.post("/", authorize(["admin", "doctor", "trainer"]), createLead);
 leadRouter.get("/", authorize(["admin"]), getAllLeads);
 leadRouter.get("/:id", authorize(["admin", "doctor", "trainer"]), getLeadById);
-leadRouter.patch("/:id", authorize(["admin", "doctor", "trainer"]), updateLeadById);
-leadRouter.delete("/:id", authorize(["admin"]), deleteLeadById);
-leadRouter.post(
-  "/:id/convert",
-  authorize(["admin"]),
-  convertLeadToUser,
+leadRouter.patch(
+	"/:id",
+	authorize(["admin", "doctor", "trainer"]),
+	updateLeadById,
 );
+leadRouter.delete("/:id", authorize(["admin"]), deleteLeadById);
+leadRouter.post("/:id/convert", authorize(["admin"]), convertLeadToUser);
 
 export default leadRouter;

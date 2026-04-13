@@ -1326,8 +1326,7 @@ POST /leads/public-capture
 
 **Security Behavior:**
 - IP-based rate limit is applied.
-- Captcha verification runs when `LEAD_CAPTCHA_SECRET` is configured.
-- If `LEAD_CAPTCHA_REQUIRED=true`, requests are rejected unless captcha validation passes.
+- Captcha verification is temporarily disabled for MVP testing.
 - `website` is a honeypot field. If non-empty, the API returns `202` but ignores the payload.
 - Health score and brand tier are computed automatically when `assessment` is provided.
 

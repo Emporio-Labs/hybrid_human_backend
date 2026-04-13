@@ -9,7 +9,6 @@ import {
 	updateLeadById,
 } from "../controllers/lead.controller";
 import { authenticateBasicCredentials } from "../middleware/basic-auth.middleware";
-import { verifyLeadCaptcha } from "../middleware/captcha.middleware";
 import { publicLeadCaptureRateLimit } from "../middleware/public-rate-limit.middleware";
 import { authorize } from "../middleware/rbac.middleware";
 
@@ -18,7 +17,6 @@ const leadRouter = Router();
 leadRouter.post(
 	"/public-capture",
 	publicLeadCaptureRateLimit,
-	verifyLeadCaptcha,
 	createPublicLead,
 );
 
